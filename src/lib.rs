@@ -594,8 +594,19 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			records.sort();
 
 			for record in records.iter() {
-				// TODO: Handle wildcards
-				write_name(&mut signed_data, record.name());
+				let periods = record.name().0.chars().filter(|c| *c == '.').count();
+				let labels = sig.labels.into();
+				if periods != 1 && periods != labels {
+					if periods < labels { return Err(ValidationError::Invalid); }
+					let signed_name = record.name().0.splitn(periods - labels + 1, ".").last();
+					debug_assert!(signed_name.is_some());
+					if let Some(name) = signed_name {
+						signed_data.extend_from_slice(b"\x01*");
+						write_name(&mut signed_data, name);
+					} else { return Err(ValidationError::Invalid); }
+				} else {
+					write_name(&mut signed_data, record.name());
+				}
 				signed_data.extend_from_slice(&record.ty().to_be_bytes());
 				signed_data.extend_from_slice(&1u16.to_be_bytes()); // The INternet class
 				signed_data.extend_from_slice(&sig.orig_ttl.to_be_bytes());
@@ -933,6 +944,44 @@ mod tests {
 		(cname_resp, cname_rrsig)
 	}
 
+	fn matcorallo_wildcard_record() -> (Txt, RRSig) {
+		let txt_resp = Txt {
+			name: "test.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			data: "wildcard_test".to_owned().into_bytes(),
+		};
+		let txt_rrsig = RRSig {
+			name: "test.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708321778,
+			inception: 1707106778, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("vdnXunPY4CnbW/BL8VOOR9o33+dqyKA/4h+u5VM7NjB30Shp8L8gL5UwE0k7TKRNgHC8j3TqEPEmNMIHz87Z4Q==").unwrap(),
+		};
+		(txt_resp, txt_rrsig)
+	}
+
+	fn matcorallo_cname_wildcard_record() -> (CName, RRSig, Txt, RRSig) {
+		let cname_resp = CName {
+			name: "test.cname_wildcard_test.matcorallo.com.".try_into().unwrap(),
+			canonical_name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
+		};
+		let txt_resp = Txt {
+			name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			data: "wildcard_test".to_owned().into_bytes(),
+		};
+		let cname_rrsig = RRSig {
+			name: "test.cname_wildcard_test.matcorallo.com.".try_into().unwrap(),
+			ty: CName::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708322050,
+			inception: 1707107050, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("JfJuSemF5dtQYxEw6eKL4IRP8BaDt6FtbtdpZ6HjODTDflhKQRhBEbwT7kwceKPAq18q5sWHFV1bMTqE/F3WLw==").unwrap(),
+		};
+		let txt_rrsig = RRSig {
+			name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708321778,
+			inception: 1707106778, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("vdnXunPY4CnbW/BL8VOOR9o33+dqyKA/4h+u5VM7NjB30Shp8L8gL5UwE0k7TKRNgHC8j3TqEPEmNMIHz87Z4Q==").unwrap(),
+		};
+		(cname_resp, cname_rrsig, txt_resp, txt_rrsig)
+	}
+
 	#[test]
 	fn check_txt_record_a() {
 		let dnskeys = mattcorallo_dnskey().0;
@@ -1007,7 +1056,39 @@ mod tests {
 			assert_eq!(cname.name.0, "cname_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.0, "txt_test.matcorallo.com.");
 		} else { panic!(); }
+	}
 
+	#[test]
+	fn check_wildcard_record() {
+		let dnskeys = matcorallo_dnskey().0;
+		let (txt, txt_rrsig) = matcorallo_wildcard_record();
+		let txt_resp = [txt];
+		verify_rrsig(&txt_rrsig, &dnskeys, txt_resp.iter().collect()).unwrap();
+	}
+
+	#[test]
+	fn check_wildcard_proof() {
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (cname, cname_rrsig, txt, txt_rrsig) = matcorallo_cname_wildcard_record();
+		for rr in [RR::CName(cname), RR::RRSig(cname_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
+		verified_rrs.sort();
+		assert_eq!(verified_rrs.len(), 2);
+		if let RR::Txt(txt) = &verified_rrs[0] {
+			assert_eq!(txt.name.0, "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(txt.data, b"wildcard_test");
+		} else { panic!(); }
+		if let RR::CName(cname) = &verified_rrs[1] {
+			assert_eq!(cname.name.0, "test.cname_wildcard_test.matcorallo.com.");
+			assert_eq!(cname.canonical_name.0, "cname.wildcard_test.matcorallo.com.");
+		} else { panic!(); }
 	}
 
 	#[test]
