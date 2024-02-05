@@ -89,6 +89,8 @@ pub enum RR {
 	Txt(Txt),
 	/// A TLS Certificate Association resource record
 	TLSA(TLSA),
+	/// A Canonical Name record
+	CName(CName),
 	/// A DNS (Public) Key resource record
 	DnsKey(DnsKey),
 	/// A Delegated Signer resource record
@@ -101,6 +103,7 @@ impl RR {
 	pub fn name(&self) -> &Name {
 		match self {
 			RR::Txt(rr) => &rr.name,
+			RR::CName(rr) => &rr.name,
 			RR::TLSA(rr) => &rr.name,
 			RR::DnsKey(rr) => &rr.name,
 			RR::DS(rr) => &rr.name,
@@ -110,6 +113,7 @@ impl RR {
 	fn ty(&self) -> u16 {
 		match self {
 			RR::Txt(_) => Txt::TYPE,
+			RR::CName(_) => CName::TYPE,
 			RR::TLSA(_) => TLSA::TYPE,
 			RR::DnsKey(_) => DnsKey::TYPE,
 			RR::DS(_) => DS::TYPE,
@@ -119,6 +123,7 @@ impl RR {
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		match self {
 			RR::Txt(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::CName(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::TLSA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::DnsKey(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::DS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
@@ -127,6 +132,7 @@ impl RR {
 	}
 }
 impl From<Txt> for RR { fn from(txt: Txt) -> RR { RR::Txt(txt) } }
+impl From<CName> for RR { fn from(cname: CName) -> RR { RR::CName(cname) } }
 impl From<TLSA> for RR { fn from(tlsa: TLSA) -> RR { RR::TLSA(tlsa) } }
 impl From<DnsKey> for RR { fn from(dnskey: DnsKey) -> RR { RR::DnsKey(dnskey) } }
 impl From<DS> for RR { fn from(ds: DS) -> RR { RR::DS(ds) } }
@@ -250,6 +256,9 @@ fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
 			}
 			Ok(RR::Txt(Txt { name, data: parsed_data }))
 		}
+		CName::TYPE => {
+			Ok(RR::CName(CName { name, canonical_name: read_name(&mut data)? }))
+		}
 		TLSA::TYPE => {
 			if data_len <= 3 { return Err(()); }
 			Ok(RR::TLSA(TLSA {
@@ -363,6 +372,26 @@ impl StaticRecord for TLSA {
 		out.extend_from_slice(&(len as u16).to_be_bytes());
 		out.extend_from_slice(&[self.cert_usage, self.selector, self.data_ty]);
 		out.extend_from_slice(&self.data);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A Canonical Name resource record, referring all queries for this name to another name.
+pub struct CName {
+	/// The name this record is at.
+	pub name: Name,
+	/// The canonical name.
+	///
+	/// A resolver should use this name when looking up any further records for [`Self::name`].
+	pub canonical_name: Name,
+}
+impl StaticRecord for CName {
+	const TYPE: u16 = 5;
+	fn name(&self) -> &Name { &self.name }
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		let len: u16 = name_len(&self.canonical_name);
+		out.extend_from_slice(&len.to_be_bytes());
+		write_name(out, &self.canonical_name);
 	}
 }
 
@@ -890,6 +919,20 @@ mod tests {
 		(txt_resp, txt_rrsig)
 	}
 
+	fn matcorallo_cname_record() -> (CName, RRSig) {
+		let cname_resp = CName {
+			name: "cname_test.matcorallo.com.".try_into().unwrap(),
+			canonical_name: "txt_test.matcorallo.com.".try_into().unwrap(),
+		};
+		let cname_rrsig = RRSig {
+			name: "cname_test.matcorallo.com.".try_into().unwrap(),
+			ty: CName::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708319203,
+			inception: 1707104203, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("5HIrmEotbVb95umE6SX3NrPboKsthdcY8b7DdaYQZzm0Nj5m2VgcfOmEPJYS8o1xE4GvGGF4sdfSy3Uw7TibBg==").unwrap(),
+		};
+		(cname_resp, cname_rrsig)
+	}
+
 	#[test]
 	fn check_txt_record_a() {
 		let dnskeys = mattcorallo_dnskey().0;
@@ -926,7 +969,15 @@ mod tests {
 	}
 
 	#[test]
-	fn check_double_txt_proof() {
+	fn check_cname_record() {
+		let dnskeys = matcorallo_dnskey().0;
+		let (cname, cname_rrsig) = matcorallo_cname_record();
+		let cname_resp = [cname];
+		verify_rrsig(&cname_rrsig, &dnskeys, cname_resp.iter().collect()).unwrap();
+	}
+
+	#[test]
+	fn check_multi_zone_proof() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
@@ -936,12 +987,14 @@ mod tests {
 		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		let (txt, txt_rrsig) = matcorallo_txt_record();
 		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		let (cname, cname_rrsig) = matcorallo_cname_record();
+		for rr in [RR::CName(cname), RR::RRSig(cname_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
 
 		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
 		verified_rrs.sort();
-		assert_eq!(verified_rrs.len(), 2);
+		assert_eq!(verified_rrs.len(), 3);
 		if let RR::Txt(txt) = &verified_rrs[0] {
 			assert_eq!(txt.name.0, "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
@@ -950,6 +1003,11 @@ mod tests {
 			assert_eq!(txt.name.0, "txt_test.matcorallo.com.");
 			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
+		if let RR::CName(cname) = &verified_rrs[2] {
+			assert_eq!(cname.name.0, "cname_test.matcorallo.com.");
+			assert_eq!(cname.canonical_name.0, "txt_test.matcorallo.com.");
+		} else { panic!(); }
+
 	}
 
 	#[test]
