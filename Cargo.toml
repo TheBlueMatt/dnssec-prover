@@ -10,6 +10,9 @@ categories = ["cryptography", "no-std"]
 edition = "2021"
 rust-version = "1.60.0"
 
+[features]
+std = []
+
 [dependencies]
 ring = { version = "0.17", default-features = false, features = ["alloc"] }
 hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"] }
