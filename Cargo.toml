@@ -1,0 +1,13 @@
+[package]
+name = "dnssec-prover"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.60.0"
+
+[dependencies]
+ring = { version = "0.17", default-features = false, features = ["alloc"] }
+hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"] }
+
+[dev-dependencies]
+hex-conservative = { version = "0.1", default-features = false, features = ["alloc"] }
+base64 = "0.21"
