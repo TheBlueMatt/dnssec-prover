@@ -82,6 +82,9 @@ pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
 	*inp = &inp[data_len..];
 
 	match ty {
+		A::TYPE => Ok(RR::A(A::read_from_data(name, data)?)),
+		AAAA::TYPE => Ok(RR::AAAA(AAAA::read_from_data(name, data)?)),
+		NS::TYPE => Ok(RR::NS(NS::read_from_data(name, data)?)),
 		Txt::TYPE => {
 			Ok(RR::Txt(Txt::read_from_data(name, data)?))
 		}

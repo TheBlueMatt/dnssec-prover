@@ -50,6 +50,12 @@ impl TryFrom<&str> for Name {
 /// Note that we only currently support a handful of RR types as needed to generate and validate
 /// TXT or TLSA record proofs.
 pub enum RR {
+	/// An IPv4 resource record
+	A(A),
+	/// An IPv6 resource record
+	AAAA(AAAA),
+	/// A name server resource record
+	NS(NS),
 	/// A text resource record
 	Txt(Txt),
 	/// A TLS Certificate Association resource record
@@ -67,6 +73,9 @@ impl RR {
 	/// Gets the name this record refers to.
 	pub fn name(&self) -> &Name {
 		match self {
+			RR::A(rr) => &rr.name,
+			RR::AAAA(rr) => &rr.name,
+			RR::NS(rr) => &rr.name,
 			RR::Txt(rr) => &rr.name,
 			RR::CName(rr) => &rr.name,
 			RR::TLSA(rr) => &rr.name,
@@ -77,6 +86,9 @@ impl RR {
 	}
 	fn ty(&self) -> u16 {
 		match self {
+			RR::A(_) => A::TYPE,
+			RR::AAAA(_) => AAAA::TYPE,
+			RR::NS(_) => NS::TYPE,
 			RR::Txt(_) => Txt::TYPE,
 			RR::CName(_) => CName::TYPE,
 			RR::TLSA(_) => TLSA::TYPE,
@@ -87,6 +99,9 @@ impl RR {
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		match self {
+			RR::A(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::AAAA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::NS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::Txt(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::CName(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::TLSA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
@@ -96,6 +111,9 @@ impl RR {
 		}
 	}
 }
+impl From<A> for RR { fn from(a: A) -> RR { RR::A(a) } }
+impl From<AAAA> for RR { fn from(aaaa: AAAA) -> RR { RR::AAAA(aaaa) } }
+impl From<NS> for RR { fn from(ns: NS) -> RR { RR::NS(ns) } }
 impl From<Txt> for RR { fn from(txt: Txt) -> RR { RR::Txt(txt) } }
 impl From<CName> for RR { fn from(cname: CName) -> RR { RR::CName(cname) } }
 impl From<TLSA> for RR { fn from(tlsa: TLSA) -> RR { RR::TLSA(tlsa) } }
@@ -389,5 +407,76 @@ impl StaticRecord for RRSig {
 		out.extend_from_slice(&self.key_tag.to_be_bytes());
 		write_name(out, &self.key_name);
 		out.extend_from_slice(&self.signature);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// An IPv4 Address resource record
+pub struct A {
+	/// The name this record is at.
+	pub name: Name,
+	/// The bytes of the IPv4 address.
+	pub address: [u8; 4],
+}
+impl StaticRecord for A {
+	const TYPE: u16 = 1;
+	fn name(&self) -> &Name { &self.name }
+	fn read_from_data(name: Name, data: &[u8]) -> Result<Self, ()> {
+		if data.len() != 4 { return Err(()); }
+		let mut address = [0; 4];
+		address.copy_from_slice(&data);
+		Ok(A { name, address })
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		out.extend_from_slice(&4u16.to_be_bytes());
+		out.extend_from_slice(&self.address);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// An IPv6 Address resource record
+pub struct AAAA {
+	/// The name this record is at.
+	pub name: Name,
+	/// The bytes of the IPv6 address.
+	pub address: [u8; 16],
+}
+impl StaticRecord for AAAA {
+	const TYPE: u16 = 28;
+	fn name(&self) -> &Name { &self.name }
+	fn read_from_data(name: Name, data: &[u8]) -> Result<Self, ()> {
+		if data.len() != 16 { return Err(()); }
+		let mut address = [0; 16];
+		address.copy_from_slice(&data);
+		Ok(AAAA { name, address })
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		out.extend_from_slice(&16u16.to_be_bytes());
+		out.extend_from_slice(&self.address);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A Name Server resource record, which indicates the server responsible for handling queries for
+/// a zone.
+pub struct NS {
+	/// The name this record is at.
+	///
+	/// This is also the zone which the server at [`Self::name_server`] is responsible for handling
+	/// queries for.
+	pub name: Name,
+	/// The name of the server which is responsible for handling queries for the [`Self::name`]
+	/// zone.
+	pub name_server: Name,
+}
+impl StaticRecord for NS {
+	const TYPE: u16 = 2;
+	fn name(&self) -> &Name { &self.name }
+	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+		Ok(NS { name, name_server: read_name(&mut data)? })
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		out.extend_from_slice(&name_len(&self.name_server).to_be_bytes());
+		write_name(out, &self.name_server);
 	}
 }
