@@ -12,12 +12,15 @@ rust-version = "1.60.0"
 
 [features]
 std = []
+tokio = ["tokio_crate/net", "tokio_crate/io-util", "std"]
 
 [dependencies]
 ring = { version = "0.17", default-features = false, features = ["alloc"] }
 hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"] }
+tokio_crate = { package = "tokio", version = "1.0", default-features = false, optional = true }
 
 [dev-dependencies]
 hex-conservative = { version = "0.1", default-features = false, features = ["alloc"] }
 base64 = "0.21"
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
+tokio_crate = { package = "tokio", version = "1.0", features = ["rt", "macros"] }
