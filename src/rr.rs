@@ -126,7 +126,7 @@ pub(crate) trait StaticRecord : Ord + Sized {
 	const TYPE: u16;
 	fn name(&self) -> &Name;
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
-	fn read_from_data(name: Name, data: &[u8]) -> Result<Self, ()>;
+	fn read_from_data(name: Name, data: &[u8], wire_packet: &[u8]) -> Result<Self, ()>;
 }
 /// A trait describing a resource record (including the [`RR`] enum).
 pub trait Record : Ord {
@@ -169,7 +169,7 @@ pub struct Txt {
 impl StaticRecord for Txt {
 	const TYPE: u16 = 16;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		let mut parsed_data = Vec::with_capacity(data.len() - 1);
 		while !data.is_empty() {
 			let len = read_u8(&mut data)? as usize;
@@ -218,7 +218,7 @@ pub struct TLSA {
 impl StaticRecord for TLSA {
 	const TYPE: u16 = 52;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(TLSA {
 			name, cert_usage: read_u8(&mut data)?, selector: read_u8(&mut data)?,
 			data_ty: read_u8(&mut data)?, data: data.to_vec(),
@@ -245,8 +245,8 @@ pub struct CName {
 impl StaticRecord for CName {
 	const TYPE: u16 = 5;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
-		Ok(CName { name, canonical_name: read_name(&mut data)? })
+	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
+		Ok(CName { name, canonical_name: read_wire_packet_name(&mut data, wire_packet)? })
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		let len: u16 = name_len(&self.canonical_name);
@@ -272,7 +272,7 @@ pub struct DnsKey {
 impl StaticRecord for DnsKey {
 	const TYPE: u16 = 48;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(DnsKey {
 			name, flags: read_u16(&mut data)?, protocol: read_u8(&mut data)?,
 			alg: read_u8(&mut data)?, pubkey: data.to_vec(),
@@ -330,7 +330,7 @@ pub struct DS {
 impl StaticRecord for DS {
 	const TYPE: u16 = 43;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(DS {
 			name, key_tag: read_u16(&mut data)?, alg: read_u8(&mut data)?,
 			digest_type: read_u8(&mut data)?, digest: data.to_vec(),
@@ -386,12 +386,13 @@ pub struct RRSig {
 impl StaticRecord for RRSig {
 	const TYPE: u16 = 46;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(RRSig {
 			name, ty: read_u16(&mut data)?, alg: read_u8(&mut data)?,
 			labels: read_u8(&mut data)?, orig_ttl: read_u32(&mut data)?,
 			expiration: read_u32(&mut data)?, inception: read_u32(&mut data)?,
-			key_tag: read_u16(&mut data)?, key_name: read_name(&mut data)?,
+			key_tag: read_u16(&mut data)?,
+			key_name: read_wire_packet_name(&mut data, wire_packet)?,
 			signature: data.to_vec(),
 		})
 	}
@@ -421,7 +422,7 @@ pub struct A {
 impl StaticRecord for A {
 	const TYPE: u16 = 1;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		if data.len() != 4 { return Err(()); }
 		let mut address = [0; 4];
 		address.copy_from_slice(&data);
@@ -444,7 +445,7 @@ pub struct AAAA {
 impl StaticRecord for AAAA {
 	const TYPE: u16 = 28;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, data: &[u8]) -> Result<Self, ()> {
+	fn read_from_data(name: Name, data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		if data.len() != 16 { return Err(()); }
 		let mut address = [0; 16];
 		address.copy_from_slice(&data);
@@ -472,8 +473,8 @@ pub struct NS {
 impl StaticRecord for NS {
 	const TYPE: u16 = 2;
 	fn name(&self) -> &Name { &self.name }
-	fn read_from_data(name: Name, mut data: &[u8]) -> Result<Self, ()> {
-		Ok(NS { name, name_server: read_name(&mut data)? })
+	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
+		Ok(NS { name, name_server: read_wire_packet_name(&mut data, wire_packet)? })
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		out.extend_from_slice(&name_len(&self.name_server).to_be_bytes());

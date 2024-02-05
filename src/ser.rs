@@ -27,20 +27,30 @@ pub(crate) fn read_u32(inp: &mut &[u8]) -> Result<u32, ()> {
 	Ok(u32::from_be_bytes(bytes))
 }
 
-pub(crate) fn read_name(inp: &mut &[u8]) -> Result<Name, ()> {
-	let mut name = String::with_capacity(1024);
+fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String) -> Result<(), ()> {
 	loop {
 		let len = read_u8(inp)? as usize;
 		if len == 0 {
-			if name.is_empty() { name += "."; }
+			if name.is_empty() { *name += "."; }
+			break;
+		} else if len >= 0xc0 {
+			let offs = ((len & !0xc0) << 8) | read_u8(inp)? as usize;
+			if offs >= wire_packet.len() { return Err(()); }
+			read_wire_packet_labels(&mut &wire_packet[offs..], wire_packet, name)?;
 			break;
 		}
 		if inp.len() <= len { return Err(()); }
-		name += core::str::from_utf8(&inp[..len]).map_err(|_| ())?;
-		name += ".";
+		*name += core::str::from_utf8(&inp[..len]).map_err(|_| ())?;
+		*name += ".";
 		*inp = &inp[len..];
-		if name.len() > 1024 { return Err(()); }
+		if name.len() > 255 { return Err(()); }
 	}
+	Ok(())
+}
+
+pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Result<Name, ()> {
+	let mut name = String::with_capacity(1024);
+	read_wire_packet_labels(inp, wire_packet, &mut name)?;
 	Ok(name.try_into()?)
 }
 
@@ -70,8 +80,8 @@ pub(crate) fn name_len(name: &Name) -> u16 {
 	}
 }
 
-pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
-	let name = read_name(inp)?;
+pub(crate) fn parse_wire_packet_rr(inp: &mut &[u8], wire_packet: &[u8]) -> Result<RR, ()> {
+	let name = read_wire_packet_name(inp, wire_packet)?;
 	let ty = read_u16(inp)?;
 	let class = read_u16(inp)?;
 	if class != 1 { return Err(()); } // We only support the INternet
@@ -82,29 +92,21 @@ pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
 	*inp = &inp[data_len..];
 
 	match ty {
-		A::TYPE => Ok(RR::A(A::read_from_data(name, data)?)),
-		AAAA::TYPE => Ok(RR::AAAA(AAAA::read_from_data(name, data)?)),
-		NS::TYPE => Ok(RR::NS(NS::read_from_data(name, data)?)),
-		Txt::TYPE => {
-			Ok(RR::Txt(Txt::read_from_data(name, data)?))
-		}
-		CName::TYPE => {
-			Ok(RR::CName(CName::read_from_data(name, data)?))
-		}
-		TLSA::TYPE => {
-			Ok(RR::TLSA(TLSA::read_from_data(name, data)?))
-		},
-		DnsKey::TYPE => {
-			Ok(RR::DnsKey(DnsKey::read_from_data(name, data)?))
-		},
-		DS::TYPE => {
-			Ok(RR::DS(DS::read_from_data(name, data)?))
-		},
-		RRSig::TYPE => {
-			Ok(RR::RRSig(RRSig::read_from_data(name, data)?))
-		},
+		A::TYPE => Ok(RR::A(A::read_from_data(name, data, wire_packet)?)),
+		AAAA::TYPE => Ok(RR::AAAA(AAAA::read_from_data(name, data, wire_packet)?)),
+		NS::TYPE => Ok(RR::NS(NS::read_from_data(name, data, wire_packet)?)),
+		Txt::TYPE => Ok(RR::Txt(Txt::read_from_data(name, data, wire_packet)?)),
+		CName::TYPE => Ok(RR::CName(CName::read_from_data(name, data, wire_packet)?)),
+		TLSA::TYPE => Ok(RR::TLSA(TLSA::read_from_data(name, data, wire_packet)?)),
+		DnsKey::TYPE => Ok(RR::DnsKey(DnsKey::read_from_data(name, data, wire_packet)?)),
+		DS::TYPE => Ok(RR::DS(DS::read_from_data(name, data, wire_packet)?)),
+		RRSig::TYPE => Ok(RR::RRSig(RRSig::read_from_data(name, data, wire_packet)?)),
 		_ => Err(()),
 	}
+}
+
+pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
+	parse_wire_packet_rr(inp, &[])
 }
 
 pub(crate) fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])
