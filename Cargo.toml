@@ -17,3 +17,4 @@ hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"
 [dev-dependencies]
 hex-conservative = { version = "0.1", default-features = false, features = ["alloc"] }
 base64 = "0.21"
+rand = { version = "0.8", default-features = false, features = ["getrandom"] }
