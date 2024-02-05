@@ -664,13 +664,23 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 /// Given a set of arbitrary records, this attempts to validate DNSSEC data from the [`root_hints`]
 /// through to any supported non-DNSSEC record types.
 ///
-/// All records which could be validated are returned.
+/// All records which could be validated are returned, though if an error is found validating any
+/// contained record, only `Err` will be returned.
 pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationError> {
 	let mut zone = ".";
 	let mut res = Vec::new();
-	let mut next_ds_set = None;
-	'next_zone: while zone == "." || next_ds_set.is_some() {
+	let mut pending_ds_sets = Vec::with_capacity(1);
+	'next_zone: while zone == "." || !pending_ds_sets.is_empty() {
 		let mut found_unsupported_alg = false;
+		let next_ds_set;
+		if let Some((next_zone, ds_set)) = pending_ds_sets.pop() {
+			next_ds_set = Some(ds_set);
+			zone = next_zone;
+		} else {
+			debug_assert_eq!(zone, ".");
+			next_ds_set = None;
+		}
+
 		for rrsig in inp.iter()
 			.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
 			.filter(|rrsig| rrsig.name.0 == zone && rrsig.ty == DnsKey::TYPE)
@@ -686,19 +696,11 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 				verify_dnskey_rrsig(rrsig, next_ds_set.clone().unwrap(), dnskeys.clone().collect())
 			};
 			if dnskeys_verified.is_ok() {
-				let mut last_validated_type = None;
-				next_ds_set = None;
 				for rrsig in inp.iter()
 					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
 					.filter(move |rrsig| rrsig.key_name.0 == zone && rrsig.name.0 != zone)
 				{
 					if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
-					if last_validated_type == Some(rrsig.ty) {
-						// If we just validated all the RRs for this type, go ahead and skip it. We
-						// may end up double-validating some RR Sets if there's multiple RRSigs for
-						// the same sets interwoven with other RRSets, but that's okay.
-						continue;
-					}
 					let signed_records = inp.iter()
 						.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
 					verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect())?;
@@ -706,19 +708,23 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 						// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
 						RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
 						DS::TYPE => {
-							next_ds_set = Some(signed_records.filter_map(|rr|
-								if let RR::DS(ds) = rr { Some(ds) }
-								else { debug_assert!(false, "We already filtered by type"); None }));
-							zone = &rrsig.name;
+							if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.0) {
+								pending_ds_sets.push((
+									&rrsig.name,
+									signed_records.filter_map(|rr|
+										if let RR::DS(ds) = rr { Some(ds) }
+										else { debug_assert!(false, "We already filtered by type"); None })
+								));
+							}
 						},
 						_ => {
-							for record in signed_records { res.push(record); }
-							last_validated_type = Some(rrsig.ty);
+							for record in signed_records {
+								if !res.contains(&record) { res.push(record); }
+							}
 						},
 					}
 				}
-				if next_ds_set.is_none() { break 'next_zone; }
-				else { continue 'next_zone; }
+				continue 'next_zone;
 			} else if dnskeys_verified == Err(ValidationError::UnsupportedAlgorithm) {
 				// There may be redundant signatures by different keys, where one we don't supprt
 				// and another we do. Ignore ones we don't support, but if there are no more,
@@ -840,8 +846,52 @@ mod tests {
 		(txt_resp, txt_rrsig)
 	}
 
+	fn matcorallo_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
+		let com_dnskeys = com_dnskey().0;
+		let mut matcorallo_ds = vec![DS {
+			name: "matcorallo.com.".try_into().unwrap(), key_tag: 24930, alg: 13, digest_type: 2,
+			digest: Vec::from_hex("693E990CBB1CE1095E387092D3C04BCE907C008891F32A88D41D3ECB129E5E23").unwrap(),
+		}];
+		let ds_rrsig = RRSig {
+			name: "matcorallo.com.".try_into().unwrap(), ty: DS::TYPE, alg: 13, labels: 2, orig_ttl: 86400,
+			expiration: 1707628636, inception: 1707019636, key_tag: 4534, key_name: "com.".try_into().unwrap(),
+			signature: base64::decode("l9b+DhtnJSIzR6y4Bwx+0L9kep77UNCBoTg74RTSL6oMrQd8w4OobHxzwDyXqnLfyxVP18V+AnQp4DdJ2nUW1g==").unwrap(),
+		};
+		verify_rrsig(&ds_rrsig, &com_dnskeys, matcorallo_ds.iter().collect()).unwrap();
+		let dnskeys = vec![DnsKey {
+			name: "matcorallo.com.".try_into().unwrap(), flags: 257, protocol: 3, alg: 13,
+			pubkey: base64::decode("pfO3ow3SrKhLS7AMEi3b5W9P28nCOB9vryxfSXhqMcXFP1x9V4xAt0/JLr0zNodsqRD/8d9Yhu4Wf3hnSlaavw==").unwrap(),
+		}, DnsKey {
+			name: "matcorallo.com.".try_into().unwrap(), flags: 256, protocol: 3, alg: 13,
+			pubkey: base64::decode("OO6LQTV1mnRsFgn6YQoyeo/SDqS3eajfVv8WGQVnuSYO/bTS9St1tJiox2fgU6wRWDU3chhjz1Pj0unKUAQKig==").unwrap(),
+		}];
+		let dnskey_rrsig = RRSig {
+			name: "matcorallo.com.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 2, orig_ttl: 604800,
+			expiration: 1708309135, inception: 1707094135, key_tag: 24930, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("2MKg3bTn9zf4ThwCoKRFadqD6l1D6SuLksRieKxFC0QQnzUOCRgZSK2/IlT0DMEoM0+mGrJZo7UG79UILMGUyg==").unwrap(),
+		};
+		verify_dnskey_rrsig(&dnskey_rrsig, &matcorallo_ds, dnskeys.iter().collect()).unwrap();
+		let rrs = vec![matcorallo_ds.pop().unwrap().into(), ds_rrsig.into(),
+			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
+		(dnskeys, rrs)
+	}
+
+	fn matcorallo_txt_record() -> (Txt, RRSig) {
+		let txt_resp = Txt {
+			name: "txt_test.matcorallo.com.".try_into().unwrap(),
+			data: "dnssec_prover_test".to_owned().into_bytes(),
+		};
+		let txt_rrsig = RRSig {
+			name: "txt_test.matcorallo.com.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708319203,
+			inception: 1707104203, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("4vaE5Jex2VvIT39JpuMNT7Ds7O0OfzTik5f8WcRRxO0IJnGAO16syAsNUkNkNqsMYknnjHDF0lI4agszgzdpsw==").unwrap(),
+		};
+		(txt_resp, txt_rrsig)
+	}
+
 	#[test]
-	fn check_txt_record() {
+	fn check_txt_record_a() {
 		let dnskeys = mattcorallo_dnskey().0;
 		let (txt, txt_rrsig) = mattcorallo_txt_record();
 		let txt_resp = [txt];
@@ -849,7 +899,7 @@ mod tests {
 	}
 
 	#[test]
-	fn check_txt_proof() {
+	fn check_single_txt_proof() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
@@ -864,6 +914,41 @@ mod tests {
 		if let RR::Txt(txt) = &verified_rrs[0] {
 			assert_eq!(txt.name.0, "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
+		} else { panic!(); }
+	}
+
+	#[test]
+	fn check_txt_record_b() {
+		let dnskeys = matcorallo_dnskey().0;
+		let (txt, txt_rrsig) = matcorallo_txt_record();
+		let txt_resp = [txt];
+		verify_rrsig(&txt_rrsig, &dnskeys, txt_resp.iter().collect()).unwrap();
+	}
+
+	#[test]
+	fn check_double_txt_proof() {
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in mattcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (txt, txt_rrsig) = mattcorallo_txt_record();
+		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (txt, txt_rrsig) = matcorallo_txt_record();
+		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
+		verified_rrs.sort();
+		assert_eq!(verified_rrs.len(), 2);
+		if let RR::Txt(txt) = &verified_rrs[0] {
+			assert_eq!(txt.name.0, "matt.user._bitcoin-payment.mattcorallo.com.");
+			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
+		} else { panic!(); }
+		if let RR::Txt(txt) = &verified_rrs[1] {
+			assert_eq!(txt.name.0, "txt_test.matcorallo.com.");
+			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
 	}
 
