@@ -14,7 +14,6 @@
 //! It is no-std (but requires `alloc`) and seeks to have minimal dependencies and a reasonably
 //! conservative MSRV policy, allowing it to be used in as many places as possible.
 
-#![allow(deprecated)] // XXX
 #![deny(missing_docs)]
 
 #![no_std]
@@ -22,10 +21,17 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use alloc::vec;
-use alloc::string::String;
-use alloc::borrow::ToOwned;
 
 use ring::signature;
+
+pub mod rr;
+use rr::*;
+
+mod ser;
+use ser::{bytes_to_rsa_pk, parse_rr, write_name};
+
+#[cfg(feature = "std")]
+pub mod query;
 
 /// Gets the trusted root anchors
 ///
@@ -48,248 +54,6 @@ pub fn root_hints() -> Vec<DS> {
 	res
 }
 
-/// A valid domain name.
-///
-/// It must end with a ".", be no longer than 255 bytes, consist of only printable ASCII
-/// characters and each label may be no longer than 63 bytes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Name(String);
-impl core::ops::Deref for Name {
-	type Target = str;
-	fn deref(&self) -> &str { &self.0 }
-}
-impl TryFrom<String> for Name {
-	type Error = ();
-	fn try_from(s: String) -> Result<Name, ()> {
-		if s.is_empty() { return Err(()); }
-		if *s.as_bytes().last().unwrap_or(&0) != b"."[0] { return Err(()); }
-		if s.len() > 255 { return Err(()); }
-		if s.chars().any(|c| !c.is_ascii_graphic() && c != '.' && c != '-') { return Err(()); }
-		for label in s.split(".") {
-			if label.len() > 63 { return Err(()); }
-		}
-
-		Ok(Name(s))
-	}
-}
-impl TryFrom<&str> for Name {
-	type Error = ();
-	fn try_from(s: &str) -> Result<Name, ()> {
-		Self::try_from(s.to_owned())
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A supported Resource Record
-///
-/// Note that we only currently support a handful of RR types as needed to generate and validate
-/// TXT or TLSA record proofs.
-pub enum RR {
-	/// A text resource record
-	Txt(Txt),
-	/// A TLS Certificate Association resource record
-	TLSA(TLSA),
-	/// A Canonical Name record
-	CName(CName),
-	/// A DNS (Public) Key resource record
-	DnsKey(DnsKey),
-	/// A Delegated Signer resource record
-	DS(DS),
-	/// A Resource Record Signature record
-	RRSig(RRSig),
-}
-impl RR {
-	/// Gets the name this record refers to.
-	pub fn name(&self) -> &Name {
-		match self {
-			RR::Txt(rr) => &rr.name,
-			RR::CName(rr) => &rr.name,
-			RR::TLSA(rr) => &rr.name,
-			RR::DnsKey(rr) => &rr.name,
-			RR::DS(rr) => &rr.name,
-			RR::RRSig(rr) => &rr.name,
-		}
-	}
-	fn ty(&self) -> u16 {
-		match self {
-			RR::Txt(_) => Txt::TYPE,
-			RR::CName(_) => CName::TYPE,
-			RR::TLSA(_) => TLSA::TYPE,
-			RR::DnsKey(_) => DnsKey::TYPE,
-			RR::DS(_) => DS::TYPE,
-			RR::RRSig(_) => RRSig::TYPE,
-		}
-	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		match self {
-			RR::Txt(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-			RR::CName(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-			RR::TLSA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-			RR::DnsKey(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-			RR::DS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-			RR::RRSig(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
-		}
-	}
-}
-impl From<Txt> for RR { fn from(txt: Txt) -> RR { RR::Txt(txt) } }
-impl From<CName> for RR { fn from(cname: CName) -> RR { RR::CName(cname) } }
-impl From<TLSA> for RR { fn from(tlsa: TLSA) -> RR { RR::TLSA(tlsa) } }
-impl From<DnsKey> for RR { fn from(dnskey: DnsKey) -> RR { RR::DnsKey(dnskey) } }
-impl From<DS> for RR { fn from(ds: DS) -> RR { RR::DS(ds) } }
-impl From<RRSig> for RR { fn from(rrsig: RRSig) -> RR { RR::RRSig(rrsig) } }
-
-trait StaticRecord : Ord {
-	// http://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4
-	const TYPE: u16;
-	fn name(&self) -> &Name;
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
-}
-/// A trait describing a resource record (including the [`RR`] enum).
-pub trait Record : Ord + {
-	/// The resource record type, as maintained by IANA.
-	///
-	/// Current assignments can be found at
-	/// <http://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4>
-	fn ty(&self) -> u16;
-	/// The name this record is at.
-	fn name(&self) -> &Name;
-	/// Writes the data of this record, prefixed by a u16 length, to the given `Vec`.
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
-}
-impl<RR: StaticRecord> Record for RR {
-	fn ty(&self) -> u16 { RR::TYPE }
-	fn name(&self) -> &Name { RR::name(self) }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		RR::write_u16_len_prefixed_data(self, out)
-	}
-}
-impl Record for RR {
-	fn ty(&self) -> u16 { self.ty() }
-	fn name(&self) -> &Name { self.name() }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		self.write_u16_len_prefixed_data(out)
-	}
-}
-
-fn read_u8(inp: &mut &[u8]) -> Result<u8, ()> {
-	let res = *inp.get(0).ok_or(())?;
-	*inp = &inp[1..];
-	Ok(res)
-}
-fn read_u16(inp: &mut &[u8]) -> Result<u16, ()> {
-	if inp.len() < 2 { return Err(()); }
-	let mut bytes = [0; 2];
-	bytes.copy_from_slice(&inp[..2]);
-	*inp = &inp[2..];
-	Ok(u16::from_be_bytes(bytes))
-}
-fn read_u32(inp: &mut &[u8]) -> Result<u32, ()> {
-	if inp.len() < 4 { return Err(()); }
-	let mut bytes = [0; 4];
-	bytes.copy_from_slice(&inp[..4]);
-	*inp = &inp[4..];
-	Ok(u32::from_be_bytes(bytes))
-}
-
-fn read_name(inp: &mut &[u8]) -> Result<Name, ()> {
-	let mut name = String::with_capacity(1024);
-	loop {
-		let len = read_u8(inp)? as usize;
-		if len == 0 {
-			if name.is_empty() { name += "."; }
-			break;
-		}
-		if inp.len() <= len { return Err(()); }
-		name += core::str::from_utf8(&inp[..len]).map_err(|_| ())?;
-		name += ".";
-		*inp = &inp[len..];
-		if name.len() > 1024 { return Err(()); }
-	}
-	Ok(name.try_into()?)
-}
-
-trait Writer { fn write(&mut self, buf: &[u8]); }
-impl Writer for Vec<u8> { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
-impl Writer for ring::digest::Context { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
-fn write_name<W: Writer>(out: &mut W, name: &str) {
-	let canonical_name = name.to_ascii_lowercase();
-	if canonical_name == "." {
-		out.write(&[0]);
-	} else {
-		for label in canonical_name.split(".") {
-			out.write(&(label.len() as u8).to_be_bytes());
-			out.write(label.as_bytes());
-		}
-	}
-}
-fn name_len(name: &Name) -> u16 {
-	if name.0 == "." {
-		1
-	} else {
-		let mut res = 0;
-		for label in name.split(".") {
-			res += 1 + label.len();
-		}
-		res as u16
-	}
-}
-
-fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
-	let name = read_name(inp)?;
-	let ty = read_u16(inp)?;
-	let class = read_u16(inp)?;
-	if class != 1 { return Err(()); } // We only support the INternet
-	let _ttl = read_u32(inp)?;
-	let data_len = read_u16(inp)? as usize;
-	if inp.len() < data_len { return Err(()); }
-	let mut data = &inp[..data_len];
-	*inp = &inp[data_len..];
-
-	match ty {
-		Txt::TYPE => {
-			let mut parsed_data = Vec::with_capacity(data_len - 1);
-			while !data.is_empty() {
-				let len = read_u8(&mut data)? as usize;
-				if data.len() < len { return Err(()); }
-				parsed_data.extend_from_slice(&data[..len]);
-				data = &data[len..];
-			}
-			Ok(RR::Txt(Txt { name, data: parsed_data }))
-		}
-		CName::TYPE => {
-			Ok(RR::CName(CName { name, canonical_name: read_name(&mut data)? }))
-		}
-		TLSA::TYPE => {
-			if data_len <= 3 { return Err(()); }
-			Ok(RR::TLSA(TLSA {
-				name, cert_usage: read_u8(&mut data)?, selector: read_u8(&mut data)?,
-				data_ty: read_u8(&mut data)?, data: data.to_vec(),
-			}))
-		},
-		DnsKey::TYPE => {
-			Ok(RR::DnsKey(DnsKey {
-				name, flags: read_u16(&mut data)?, protocol: read_u8(&mut data)?,
-				alg: read_u8(&mut data)?, pubkey: data.to_vec(),
-			}))
-		},
-		DS::TYPE => {
-			Ok(RR::DS(DS {
-				name, key_tag: read_u16(&mut data)?, alg: read_u8(&mut data)?,
-				digest_type: read_u8(&mut data)?, digest: data.to_vec(),
-			}))
-		},
-		RRSig::TYPE => {
-			Ok(RR::RRSig(RRSig {
-				name, ty: read_u16(&mut data)?, alg: read_u8(&mut data)?,
-				labels: read_u8(&mut data)?, orig_ttl: read_u32(&mut data)?,
-				expiration: read_u32(&mut data)?, inception: read_u32(&mut data)?,
-				key_tag: read_u16(&mut data)?, key_name: read_name(&mut data)?,
-				signature: data.to_vec(),
-			}))
-		},
-		_ => Err(()),
-	}
-}
 /// Parse a stream of [`RR`]s from the format described in [RFC 9102](https://www.rfc-editor.org/rfc/rfc9102.html).
 ///
 /// Note that this is only the series of `AuthenticationChain` records, and does not read the
@@ -314,221 +78,6 @@ pub fn write_rr<RR: Record>(rr: &RR, ttl: u32, out: &mut Vec<u8>) {
 	rr.write_u16_len_prefixed_data(out);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)] // TODO: ord is wrong cause need to consider len first, maybe
-/// A text resource record, containing arbitrary text data
-pub struct Txt {
-	/// The name this record is at.
-	pub name: Name,
-	/// The text record itself.
-	///
-	/// While this is generally UTF-8-valid, there is no specific requirement that it be, and thus
-	/// is an arbitrary series of bytes here.
-	data: Vec<u8>,
-}
-impl StaticRecord for Txt {
-	const TYPE: u16 = 16;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = (self.data.len() + self.data.len() / 255 + 1) as u16;
-		out.extend_from_slice(&len.to_be_bytes());
-
-		let mut data_write = &self.data[..];
-		out.extend_from_slice(&[data_write.len().try_into().unwrap_or(255)]);
-		while !data_write.is_empty() {
-			let split_pos = core::cmp::min(255, data_write.len());
-			out.extend_from_slice(&data_write[..split_pos]);
-			data_write = &data_write[split_pos..];
-			if !data_write.is_empty() {
-				out.extend_from_slice(&[data_write.len().try_into().unwrap_or(255)]);
-			}
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A TLS Certificate Association resource record containing information about the TLS certificate
-/// which should be expected when communicating with the host at the given name.
-///
-/// See <https://en.wikipedia.org/wiki/DNS-based_Authentication_of_Named_Entities#TLSA_RR> for more
-/// info.
-pub struct TLSA {
-	/// The name this record is at.
-	pub name: Name,
-	/// The type of constraint on the TLS certificate(s) used which should be enforced by this
-	/// record.
-	pub cert_usage: u8,
-	/// Whether to match on the full certificate, or only the public key.
-	pub selector: u8,
-	/// The type of data included which is used to match the TLS certificate(s).
-	pub data_ty: u8,
-	/// The certificate data or hash of the certificate data itself.
-	pub data: Vec<u8>,
-}
-impl StaticRecord for TLSA {
-	const TYPE: u16 = 52;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = 3 + self.data.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&[self.cert_usage, self.selector, self.data_ty]);
-		out.extend_from_slice(&self.data);
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A Canonical Name resource record, referring all queries for this name to another name.
-pub struct CName {
-	/// The name this record is at.
-	pub name: Name,
-	/// The canonical name.
-	///
-	/// A resolver should use this name when looking up any further records for [`Self::name`].
-	pub canonical_name: Name,
-}
-impl StaticRecord for CName {
-	const TYPE: u16 = 5;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len: u16 = name_len(&self.canonical_name);
-		out.extend_from_slice(&len.to_be_bytes());
-		write_name(out, &self.canonical_name);
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A public key resource record which can be used to validate [`RRSig`]s.
-pub struct DnsKey {
-	/// The name this record is at.
-	pub name: Name,
-	/// Flags which constrain the usage of this public key.
-	pub flags: u16,
-	/// The protocol this key is used for (protocol `3` is DNSSEC). 
-	pub protocol: u8,
-	/// The algorithm which this public key uses to sign data.
-	pub alg: u8,
-	/// The public key itself.
-	pub pubkey: Vec<u8>,
-}
-impl StaticRecord for DnsKey {
-	const TYPE: u16 = 48;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = 2 + 1 + 1 + self.pubkey.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&self.flags.to_be_bytes());
-		out.extend_from_slice(&self.protocol.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.pubkey);
-	}
-}
-impl DnsKey {
-	/// A short (non-cryptographic) digest which can be used to refer to this [`DnsKey`].
-	pub fn key_tag(&self) -> u16 {
-		let mut res = u32::from(self.flags);
-		res += u32::from(self.protocol) << 8;
-		res += u32::from(self.alg);
-		for (idx, b) in self.pubkey.iter().enumerate() {
-			if idx % 2 == 0 {
-				res += u32::from(*b) << 8;
-			} else {
-				res += u32::from(*b);
-			}
-		}
-		res += (res >> 16) & 0xffff;
-		(res & 0xffff) as u16
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A Delegation Signer resource record which indicates that some alternative [`DnsKey`] can sign
-/// for records in the zone which matches [`DS::name`].
-pub struct DS {
-	/// The name this record is at.
-	///
-	/// This is also the zone that a [`DnsKey`] which matches the [`Self::digest`] can sign for.
-	pub name: Name,
-	/// A short tag which describes the matching [`DnsKey`].
-	///
-	/// This matches the [`DnsKey::key_tag`] for the [`DnsKey`] which is referred to by this
-	/// [`DS`].
-	pub key_tag: u16,
-	/// The algorithm which the [`DnsKey`] referred to by this [`DS`] uses.
-	///
-	/// This matches the [`DnsKey::alg`] field in the referred-to [`DnsKey`].
-	pub alg: u8,
-	/// The type of digest used to hash the referred-to [`DnsKey`].
-	pub digest_type: u8,
-	/// The digest itself.
-	pub digest: Vec<u8>,
-}
-impl StaticRecord for DS {
-	const TYPE: u16 = 43;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = 2 + 1 + 1 + self.digest.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&self.key_tag.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.digest_type.to_be_bytes());
-		out.extend_from_slice(&self.digest);
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// A Resource Record (set) Signature resource record. This contains a signature over all the
-/// resources records of the given type at the given name.
-pub struct RRSig {
-	/// The name this record is at.
-	///
-	/// This is also the name of any records which this signature is covering (ignoring wildcards).
-	pub name: Name,
-	/// The resource record type which this [`RRSig`] is signing.
-	///
-	/// All resources records of this type at the same name as [`Self::name`] must be signed by
-	/// this [`RRSig`].
-	pub ty: u16,
-	/// The algorithm which is being used to sign.
-	///
-	/// This must match the [`DnsKey::alg`] field in the [`DnsKey`] being used to sign.
-	pub alg: u8,
-	/// The number of labels in the name of the records that this signature is signing.
-	// TODO: Describe this better in terms of wildcards
-	pub labels: u8,
-	/// The TTL of the records which this [`RRSig`] is signing.
-	pub orig_ttl: u32,
-	/// The expiration (as a UNIX timestamp) of this signature.
-	pub expiration: u32,
-	/// The time (as a UNIX timestamp) at which this signature becomes valid.
-	pub inception: u32,
-	/// A short tag which describes the matching [`DnsKey`].
-	///
-	/// This matches the [`DnsKey::key_tag`] for the [`DnsKey`] which created this signature.
-	pub key_tag: u16,
-	/// The [`DnsKey::name`] in the [`DnsKey`] which created this signature.
-	///
-	/// This must be a parent of the [`Self::name`].
-	pub key_name: Name,
-	/// The signature itself.
-	pub signature: Vec<u8>,
-}
-impl StaticRecord for RRSig {
-	const TYPE: u16 = 46;
-	fn name(&self) -> &Name { &self.name }
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = 2 + 1 + 1 + 4*3 + 2 + name_len(&self.key_name) + self.signature.len() as u16;
-		out.extend_from_slice(&len.to_be_bytes());
-		out.extend_from_slice(&self.ty.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.labels.to_be_bytes());
-		out.extend_from_slice(&self.orig_ttl.to_be_bytes());
-		out.extend_from_slice(&self.expiration.to_be_bytes());
-		out.extend_from_slice(&self.inception.to_be_bytes());
-		out.extend_from_slice(&self.key_tag.to_be_bytes());
-		write_name(out, &self.key_name);
-		out.extend_from_slice(&self.signature);
-	}
-}
-
 #[derive(Debug, PartialEq)]
 /// An error when validating DNSSEC signatures or other data
 pub enum ValidationError {
@@ -541,27 +90,6 @@ pub enum ValidationError {
 	UnsupportedAlgorithm,
 	/// The provided data was invalid or signatures did not validate.
 	Invalid,
-}
-
-fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])
--> Result<signature::RsaPublicKeyComponents<&'a [u8]>, ValidationError> {
-	if pubkey.len() <= 3 { return Err(ValidationError::Invalid); }
-
-	let mut pos = 0;
-	let exponent_length;
-	if pubkey[0] == 0 {
-		exponent_length = ((pubkey[1] as usize) << 8) | (pubkey[2] as usize);
-		pos += 3;
-	} else {
-		exponent_length = pubkey[0] as usize;
-		pos += 1;
-	}
-
-	if pubkey.len() <= pos + exponent_length { return Err(ValidationError::Invalid); }
-	Ok(signature::RsaPublicKeyComponents {
-		n: &pubkey[pos + exponent_length..],
-		e: &pubkey[pos..pos + exponent_length]
-	})
 }
 
 // TODO: return the validity period
@@ -594,11 +122,11 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			records.sort();
 
 			for record in records.iter() {
-				let periods = record.name().0.chars().filter(|c| *c == '.').count();
+				let periods = record.name().as_str().chars().filter(|c| *c == '.').count();
 				let labels = sig.labels.into();
 				if periods != 1 && periods != labels {
 					if periods < labels { return Err(ValidationError::Invalid); }
-					let signed_name = record.name().0.splitn(periods - labels + 1, ".").last();
+					let signed_name = record.name().as_str().splitn(periods - labels + 1, ".").last();
 					debug_assert!(signed_name.is_some());
 					if let Some(name) = signed_name {
 						signed_data.extend_from_slice(b"\x01*");
@@ -620,7 +148,7 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 					} else {
 						&signature::RSA_PKCS1_1024_8192_SHA512_FOR_LEGACY_USE_ONLY
 					};
-					bytes_to_rsa_pk(&dnskey.pubkey)?
+					bytes_to_rsa_pk(&dnskey.pubkey).map_err(|_| ValidationError::Invalid)?
 						.verify(alg, &signed_data, &sig.signature)
 						.map_err(|_| ValidationError::Invalid)?;
 				},
@@ -723,11 +251,11 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 
 		for rrsig in inp.iter()
 			.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
-			.filter(|rrsig| rrsig.name.0 == zone && rrsig.ty == DnsKey::TYPE)
+			.filter(|rrsig| rrsig.name.as_str() == zone && rrsig.ty == DnsKey::TYPE)
 		{
 			let dnskeys = inp.iter()
 				.filter_map(|rr| if let RR::DnsKey(dnskey) = rr { Some(dnskey) } else { None })
-				.filter(move |dnskey| dnskey.name.0 == zone);
+				.filter(move |dnskey| dnskey.name.as_str() == zone);
 			let dnskeys_verified = if zone == "." {
 				verify_dnskey_rrsig(rrsig, &root_hints(), dnskeys.clone().collect())
 			} else {
@@ -738,7 +266,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 			if dnskeys_verified.is_ok() {
 				for rrsig in inp.iter()
 					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
-					.filter(move |rrsig| rrsig.key_name.0 == zone && rrsig.name.0 != zone)
+					.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.name.as_str() != zone)
 				{
 					if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
 					let signed_records = inp.iter()
@@ -748,7 +276,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 						// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
 						RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
 						DS::TYPE => {
-							if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.0) {
+							if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.as_str()) {
 								pending_ds_sets.push((
 									&rrsig.name,
 									signed_records.filter_map(|rr|
@@ -788,7 +316,11 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 
 #[cfg(test)]
 mod tests {
+	#![allow(deprecated)]
+
 	use super::*;
+
+	use alloc::borrow::ToOwned;
 
 	use hex_conservative::FromHex;
 	use rand::seq::SliceRandom;
@@ -1004,7 +536,7 @@ mod tests {
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
 		assert_eq!(verified_rrs.len(), 1);
 		if let RR::Txt(txt) = &verified_rrs[0] {
-			assert_eq!(txt.name.0, "matt.user._bitcoin-payment.mattcorallo.com.");
+			assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
 	}
@@ -1045,16 +577,16 @@ mod tests {
 		verified_rrs.sort();
 		assert_eq!(verified_rrs.len(), 3);
 		if let RR::Txt(txt) = &verified_rrs[0] {
-			assert_eq!(txt.name.0, "matt.user._bitcoin-payment.mattcorallo.com.");
+			assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
 		if let RR::Txt(txt) = &verified_rrs[1] {
-			assert_eq!(txt.name.0, "txt_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
 			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
 		if let RR::CName(cname) = &verified_rrs[2] {
-			assert_eq!(cname.name.0, "cname_test.matcorallo.com.");
-			assert_eq!(cname.canonical_name.0, "txt_test.matcorallo.com.");
+			assert_eq!(cname.name.as_str(), "cname_test.matcorallo.com.");
+			assert_eq!(cname.canonical_name.as_str(), "txt_test.matcorallo.com.");
 		} else { panic!(); }
 	}
 
@@ -1082,12 +614,12 @@ mod tests {
 		verified_rrs.sort();
 		assert_eq!(verified_rrs.len(), 2);
 		if let RR::Txt(txt) = &verified_rrs[0] {
-			assert_eq!(txt.name.0, "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "cname.wildcard_test.matcorallo.com.");
 			assert_eq!(txt.data, b"wildcard_test");
 		} else { panic!(); }
 		if let RR::CName(cname) = &verified_rrs[1] {
-			assert_eq!(cname.name.0, "test.cname_wildcard_test.matcorallo.com.");
-			assert_eq!(cname.canonical_name.0, "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.matcorallo.com.");
+			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.matcorallo.com.");
 		} else { panic!(); }
 	}
 
