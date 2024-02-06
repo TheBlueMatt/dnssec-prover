@@ -204,6 +204,7 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 /// non-[`RRSig`]/[`DnsKey`]/[`DS`] records which it was able to verify using this struct.
 ///
 /// It also contains
+#[derive(Debug, Clone)]
 pub struct VerifiedRRStream<'a> {
 	/// The set of verified [`RR`]s.
 	///
