@@ -240,18 +240,33 @@ pub struct VerifiedRRStream<'a> {
 	///
 	/// Any records in [`Self::verified_rrs`] should not be considered valid unless this is before
 	/// the current UNIX time.
-	pub valid_from: u32,
+	///
+	/// While the field here is a u64, the algorithm used to identify rollovers will fail in 2133.
+	pub valid_from: u64,
 	/// The earliest [`RRSig::expiration`] of all the [`RRSig`]s validated to verify
 	/// [`Self::verified_rrs`].
 	///
 	/// Any records in [`Self::verified_rrs`] should not be considered valid unless this is after
 	/// the current UNIX time.
-	pub expires: u32,
+	///
+	/// While the field here is a u64, the algorithm used to identify rollovers will fail in 2133.
+	pub expires: u64,
 	/// The minimum [`RRSig::orig_ttl`] of all the [`RRSig`]s validated to verify
 	/// [`Self::verified_rrs`].
 	///
 	/// Any caching of [`Self::verified_rrs`] must not last longer than this value, in seconds.
 	pub max_cache_ttl: u32,
+}
+
+fn resolve_time(time: u32) -> u64 {
+	// RFC 2065 was published in January 1997, so we arbitrarily use that as a cutoff and assume
+	// any timestamps before then are actually past 2106 instead.
+	// We ignore leap years for simplicity.
+	if time < 60*60*24*365*27 {
+		(time as u64) + (u32::MAX as u64)
+	} else {
+		time.into()
+	}
 }
 
 /// Verifies the given set of resource records.
@@ -269,7 +284,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	let mut res = Vec::new();
 	let mut pending_ds_sets = Vec::with_capacity(1);
 	let mut latest_inception = 0;
-	let mut earliest_expiry = u32::MAX;
+	let mut earliest_expiry = u64::MAX;
 	let mut min_ttl = u32::MAX;
 	'next_zone: while zone == "." || !pending_ds_sets.is_empty() {
 		let mut found_unsupported_alg = false;
@@ -297,8 +312,8 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				verify_dnskey_rrsig(rrsig, next_ds_set.clone().unwrap(), dnskeys.clone().collect())
 			};
 			if dnskeys_verified.is_ok() {
-				latest_inception = cmp::max(latest_inception, rrsig.inception);
-				earliest_expiry = cmp::min(earliest_expiry, rrsig.expiration);
+				latest_inception = cmp::max(latest_inception, resolve_time(rrsig.inception));
+				earliest_expiry = cmp::min(earliest_expiry, resolve_time(rrsig.expiration));
 				min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
 				for rrsig in inp.iter()
 					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
@@ -308,8 +323,8 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 					let signed_records = inp.iter()
 						.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
 					verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect())?;
-					latest_inception = cmp::max(latest_inception, rrsig.inception);
-					earliest_expiry = cmp::min(earliest_expiry, rrsig.expiration);
+					latest_inception = cmp::max(latest_inception, resolve_time(rrsig.inception));
+					earliest_expiry = cmp::min(earliest_expiry, resolve_time(rrsig.expiration));
 					min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
 					match rrsig.ty {
 						// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s

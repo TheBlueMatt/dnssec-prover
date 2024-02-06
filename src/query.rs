@@ -211,6 +211,7 @@ mod tests {
 	use rand::seq::SliceRandom;
 
 	use std::net::ToSocketAddrs;
+	use std::time::SystemTime;
 
 	#[test]
 	fn test_txt_query() {
@@ -222,6 +223,10 @@ mod tests {
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
 		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+
+		let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+		assert!(verified_rrs.valid_from < now);
+		assert!(verified_rrs.expires > now);
 	}
 
 	#[cfg(feature = "tokio")]
@@ -238,5 +243,9 @@ mod tests {
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
 		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+
+		let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+		assert!(verified_rrs.valid_from < now);
+		assert!(verified_rrs.expires > now);
 	}
 }
