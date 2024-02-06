@@ -364,7 +364,9 @@ pub struct RRSig {
 	/// This must match the [`DnsKey::alg`] field in the [`DnsKey`] being used to sign.
 	pub alg: u8,
 	/// The number of labels in the name of the records that this signature is signing.
-	// TODO: Describe this better in terms of wildcards
+	///
+	/// If this is less than the number of labels in [`Self::name`], this signature is covering a
+	/// wildcard entry.
 	pub labels: u8,
 	/// The TTL of the records which this [`RRSig`] is signing.
 	pub orig_ttl: u32,
