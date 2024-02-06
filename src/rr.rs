@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::borrow::ToOwned;
 
-use core::cmp::Ordering;
+use core::cmp::{self, Ordering};
 
 use crate::ser::*;
 
@@ -171,8 +171,18 @@ pub struct Txt {
 impl PartialOrd for Txt {
 	fn partial_cmp(&self, o: &Txt) -> Option<Ordering> {
 		Some(self.name.cmp(&o.name)
-			.then_with(|| self.data.len().cmp(&o.data.len()))
-			.then_with(|| self.data.cmp(&o.data)))
+			.then_with(|| {
+				// Compare in wire encoding form, i.e. compare in 255-byte chunks
+				for i in 1..(self.data.len() / 255) + 2 {
+					let start = (i - 1)*255;
+					let self_len = cmp::min(i * 255, self.data.len());
+					let o_len = cmp::min(i * 255, o.data.len());
+					let slice_cmp = self_len.cmp(&o_len)
+						.then_with(|| self.data[start..self_len].cmp(&o.data[start..o_len]));
+					if !slice_cmp.is_eq() { return slice_cmp; }
+				}
+				Ordering::Equal
+			}))
 	}
 }
 impl StaticRecord for Txt {

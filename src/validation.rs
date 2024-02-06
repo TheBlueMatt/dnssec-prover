@@ -550,6 +550,41 @@ mod tests {
 		(cname_resp, cname_rrsig, txt_resp, txt_rrsig)
 	}
 
+	fn matcorallo_txt_sort_edge_cases_records() -> (Vec<Txt>, RRSig) {
+		let txts = vec![Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaa".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
+		}, Txt {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba".to_owned().into_bytes(),
+		}];
+		let rrsig = RRSig {
+			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708449632,
+			inception: 1707234632, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("elAhELwzkGpUMvzeiYZpg1+yRFPjmOeEd1ir1vYx2Dku9kzsXmAlejOYDPWdaJ6ekvHdMejCN/MtyI+iFAYqsw==").unwrap(),
+		};
+		(txts, rrsig)
+	}
+
 	#[test]
 	fn check_txt_record_a() {
 		let dnskeys = mattcorallo_dnskey().0;
@@ -660,6 +695,27 @@ mod tests {
 			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.matcorallo.com.");
 		} else { panic!(); }
+	}
+
+	#[test]
+	fn check_txt_sort_order() {
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (mut txts, rrsig) = matcorallo_txt_sort_edge_cases_records();
+		write_rr(&rrsig, 1, &mut rr_stream);
+		for txt in txts.iter() { write_rr(txt, 1, &mut rr_stream); }
+
+		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+		let mut verified_txts = verified_rrs.verified_rrs
+			.iter().map(|rr| if let RR::Txt(txt) = rr { txt.clone() } else { panic!(); })
+			.collect::<Vec<_>>();
+		verified_txts.sort();
+		txts.sort();
+		assert_eq!(verified_txts, txts);
 	}
 
 	#[test]
