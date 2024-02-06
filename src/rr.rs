@@ -189,7 +189,7 @@ impl StaticRecord for Txt {
 		Ok(Txt { name, data: parsed_data })
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		let len = (self.data.len() + self.data.len() / 255 + 1) as u16;
+		let len = (self.data.len() + (self.data.len() + 254) / 255) as u16;
 		out.extend_from_slice(&len.to_be_bytes());
 
 		let mut data_write = &self.data[..];
