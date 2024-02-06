@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::borrow::ToOwned;
 
+use core::cmp::Ordering;
+
 use crate::ser::*;
 
 /// A valid domain name.
@@ -155,7 +157,7 @@ impl Record for RR {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)] // TODO: ord is wrong cause need to consider len first, maybe
+#[derive(Debug, Clone, PartialEq, Eq, Ord)]
 /// A text resource record, containing arbitrary text data
 pub struct Txt {
 	/// The name this record is at.
@@ -165,6 +167,13 @@ pub struct Txt {
 	/// While this is generally UTF-8-valid, there is no specific requirement that it be, and thus
 	/// is an arbitrary series of bytes here.
 	pub data: Vec<u8>,
+}
+impl PartialOrd for Txt {
+	fn partial_cmp(&self, o: &Txt) -> Option<Ordering> {
+		Some(self.name.cmp(&o.name)
+			.then_with(|| self.data.len().cmp(&o.data.len()))
+			.then_with(|| self.data.cmp(&o.data)))
+	}
 }
 impl StaticRecord for Txt {
 	const TYPE: u16 = 16;

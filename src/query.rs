@@ -201,6 +201,23 @@ mod tests {
 	use std::net::ToSocketAddrs;
 	use std::time::SystemTime;
 
+
+	#[test]
+	fn test_cloudflare_txt_query() {
+		let sockaddr = "8.8.8.8:53".to_socket_addrs().unwrap().next().unwrap();
+		let query_name = "cloudflare.com.".try_into().unwrap();
+		let proof = build_txt_proof(sockaddr, query_name).unwrap();
+
+		let mut rrs = parse_rr_stream(&proof).unwrap();
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+		assert!(verified_rrs.verified_rrs.len() > 1);
+
+		let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+		assert!(verified_rrs.valid_from < now);
+		assert!(verified_rrs.expires > now);
+	}
+
 	#[test]
 	fn test_txt_query() {
 		let sockaddr = "8.8.8.8:53".to_socket_addrs().unwrap().next().unwrap();
