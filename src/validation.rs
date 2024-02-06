@@ -293,7 +293,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
 				for rrsig in inp.iter()
 					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
-					.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.name.as_str() != zone)
+					.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.ty != DnsKey::TYPE)
 				{
 					if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
 					let signed_records = inp.iter()
