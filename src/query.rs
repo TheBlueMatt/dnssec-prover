@@ -221,7 +221,7 @@ mod tests {
 		let mut rrs = parse_rr_stream(&proof).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.len(), 1);
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
 	}
 
 	#[cfg(feature = "tokio")]
@@ -237,6 +237,6 @@ mod tests {
 		let mut rrs = parse_rr_stream(&proof).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.len(), 1);
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
 	}
 }

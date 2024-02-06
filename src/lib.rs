@@ -21,6 +21,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use alloc::vec;
+use core::cmp;
 
 use ring::signature;
 
@@ -92,7 +93,6 @@ pub enum ValidationError {
 	Invalid,
 }
 
-// TODO: return the validity period
 fn verify_rrsig<'a, RR: Record, Keys>(sig: &RRSig, dnskeys: Keys, mut records: Vec<&RR>)
 -> Result<(), ValidationError>
 where Keys: IntoIterator<Item = &'a DnsKey> {
@@ -107,14 +107,12 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			if dnskey.flags & 0b1_0000_0000 == 0 { continue; }
 			if dnskey.alg != sig.alg { continue; }
 
-			// TODO: Check orig_ttl somehow?
-
 			let mut signed_data = Vec::with_capacity(2048);
 			signed_data.extend_from_slice(&sig.ty.to_be_bytes());
 			signed_data.extend_from_slice(&sig.alg.to_be_bytes());
-			signed_data.extend_from_slice(&sig.labels.to_be_bytes()); // Check this somehow?
+			signed_data.extend_from_slice(&sig.labels.to_be_bytes());
 			signed_data.extend_from_slice(&sig.orig_ttl.to_be_bytes());
-			signed_data.extend_from_slice(&sig.expiration.to_be_bytes()); // Return this and inception
+			signed_data.extend_from_slice(&sig.expiration.to_be_bytes());
 			signed_data.extend_from_slice(&sig.inception.to_be_bytes());
 			signed_data.extend_from_slice(&sig.key_tag.to_be_bytes());
 			write_name(&mut signed_data, &sig.key_name);
@@ -227,6 +225,35 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 	verify_rrsig(sig, validated_dnskeys.iter().map(|k| *k), records)
 }
 
+/// Given a set of [`RR`]s, [`verify_rr_stream`] checks what it can and returns the set of
+/// non-[`RRSig`]/[`DnsKey`]/[`DS`] records which it was able to verify using this struct.
+///
+/// It also contains
+pub struct VerifiedRRStream<'a> {
+	/// The set of verified [`RR`]s.
+	///
+	/// These are not valid unless the current UNIX time is between [`Self::valid_from`] and
+	/// [`Self::expiration`].
+	pub verified_rrs: Vec<&'a RR>,
+	/// The latest [`RRSig::inception`] of all the [`RRSig`]s validated to verify
+	/// [`Self::verified_rrs`].
+	///
+	/// Any records in [`Self::verified_rrs`] should not be considered valid unless this is before
+	/// the current UNIX time.
+	pub valid_from: u32,
+	/// The earliest [`RRSig::expiration`] of all the [`RRSig`]s validated to verify
+	/// [`Self::verified_rrs`].
+	///
+	/// Any records in [`Self::verified_rrs`] should not be considered valid unless this is after
+	/// the current UNIX time.
+	pub expires: u32,
+	/// The minimum [`RRSig::orig_ttl`] of all the [`RRSig`]s validated to verify
+	/// [`Self::verified_rrs`].
+	///
+	/// Any caching of [`Self::verified_rrs`] must not last longer than this value, in seconds.
+	pub max_cache_ttl: u32,
+}
+
 /// Verifies the given set of resource records.
 ///
 /// Given a set of arbitrary records, this attempts to validate DNSSEC data from the [`root_hints`]
@@ -234,10 +261,16 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 ///
 /// All records which could be validated are returned, though if an error is found validating any
 /// contained record, only `Err` will be returned.
-pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationError> {
+///
+/// You MUST check that the current UNIX time is between [`VerifiedRRStream::latest_inception`] and
+/// [`VerifiedRRStream::earliest_expiry`].
+pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, ValidationError> {
 	let mut zone = ".";
 	let mut res = Vec::new();
 	let mut pending_ds_sets = Vec::with_capacity(1);
+	let mut latest_inception = 0;
+	let mut earliest_expiry = u32::MAX;
+	let mut min_ttl = u32::MAX;
 	'next_zone: while zone == "." || !pending_ds_sets.is_empty() {
 		let mut found_unsupported_alg = false;
 		let next_ds_set;
@@ -264,6 +297,9 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 				verify_dnskey_rrsig(rrsig, next_ds_set.clone().unwrap(), dnskeys.clone().collect())
 			};
 			if dnskeys_verified.is_ok() {
+				latest_inception = cmp::max(latest_inception, rrsig.inception);
+				earliest_expiry = cmp::min(earliest_expiry, rrsig.expiration);
+				min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
 				for rrsig in inp.iter()
 					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
 					.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.name.as_str() != zone)
@@ -272,6 +308,9 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 					let signed_records = inp.iter()
 						.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
 					verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect())?;
+					latest_inception = cmp::max(latest_inception, rrsig.inception);
+					earliest_expiry = cmp::min(earliest_expiry, rrsig.expiration);
+					min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
 					match rrsig.ty {
 						// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
 						RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
@@ -311,7 +350,13 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<Vec<&'a RR>, ValidationErro
 		}
 	}
 	if res.is_empty() { Err(ValidationError::Invalid) }
-	else { Ok(res) }
+	else if latest_inception >= earliest_expiry { Err(ValidationError::Invalid) }
+	else {
+		Ok(VerifiedRRStream {
+			verified_rrs: res, valid_from: latest_inception, expires: earliest_expiry,
+			max_cache_ttl: min_ttl,
+		})
+	}
 }
 
 #[cfg(test)]
@@ -534,11 +579,14 @@ mod tests {
 		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.len(), 1);
-		if let RR::Txt(txt) = &verified_rrs[0] {
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		if let RR::Txt(txt) = &verified_rrs.verified_rrs[0] {
 			assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
+		assert_eq!(verified_rrs.valid_from, 1707063650); // The TXT record RRSig was created last
+		assert_eq!(verified_rrs.expires, 1707631252); // The mattcorallo.com DS RRSig expires first
+		assert_eq!(verified_rrs.max_cache_ttl, 3600); // The TXT record had the shortest TTL
 	}
 
 	#[test]
@@ -574,17 +622,17 @@ mod tests {
 		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
-		verified_rrs.sort();
-		assert_eq!(verified_rrs.len(), 3);
-		if let RR::Txt(txt) = &verified_rrs[0] {
+		verified_rrs.verified_rrs.sort();
+		assert_eq!(verified_rrs.verified_rrs.len(), 3);
+		if let RR::Txt(txt) = &verified_rrs.verified_rrs[0] {
 			assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
-		if let RR::Txt(txt) = &verified_rrs[1] {
+		if let RR::Txt(txt) = &verified_rrs.verified_rrs[1] {
 			assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
 			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
-		if let RR::CName(cname) = &verified_rrs[2] {
+		if let RR::CName(cname) = &verified_rrs.verified_rrs[2] {
 			assert_eq!(cname.name.as_str(), "cname_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.as_str(), "txt_test.matcorallo.com.");
 		} else { panic!(); }
@@ -611,13 +659,13 @@ mod tests {
 		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
-		verified_rrs.sort();
-		assert_eq!(verified_rrs.len(), 2);
-		if let RR::Txt(txt) = &verified_rrs[0] {
+		verified_rrs.verified_rrs.sort();
+		assert_eq!(verified_rrs.verified_rrs.len(), 2);
+		if let RR::Txt(txt) = &verified_rrs.verified_rrs[0] {
 			assert_eq!(txt.name.as_str(), "cname.wildcard_test.matcorallo.com.");
 			assert_eq!(txt.data, b"wildcard_test");
 		} else { panic!(); }
-		if let RR::CName(cname) = &verified_rrs[1] {
+		if let RR::CName(cname) = &verified_rrs.verified_rrs[1] {
 			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.matcorallo.com.");
 		} else { panic!(); }
@@ -632,8 +680,8 @@ let rfc9102_test_vector = Vec::from_hex("045f343433045f74637003777777076578616d7
 		let mut rrs = parse_rr_stream(&rfc9102_test_vector).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.len(), 1);
-		if let RR::TLSA(tlsa) = &verified_rrs[0] {
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		if let RR::TLSA(tlsa) = &verified_rrs.verified_rrs[0] {
 			assert_eq!(tlsa.cert_usage, 3);
 			assert_eq!(tlsa.selector, 1);
 			assert_eq!(tlsa.data_ty, 1);
