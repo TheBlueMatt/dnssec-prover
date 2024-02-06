@@ -10,7 +10,7 @@ use tokio_crate::net::TcpStream as TokioTcpStream;
 use tokio_crate::io::{AsyncReadExt, AsyncWriteExt};
 
 
-use crate::write_rr;
+use crate::validation::write_rr;
 use crate::rr::*;
 use crate::ser::*;
 
@@ -206,7 +206,7 @@ pub async fn build_tlsa_proof_async(resolver: SocketAddr, domain: Name) -> Resul
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::*;
+	use crate::validation::*;
 
 	use rand::seq::SliceRandom;
 
