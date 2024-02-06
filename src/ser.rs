@@ -80,33 +80,34 @@ pub(crate) fn name_len(name: &Name) -> u16 {
 	}
 }
 
-pub(crate) fn parse_wire_packet_rr(inp: &mut &[u8], wire_packet: &[u8]) -> Result<RR, ()> {
+pub(crate) fn parse_wire_packet_rr(inp: &mut &[u8], wire_packet: &[u8]) -> Result<(RR, u32), ()> {
 	let name = read_wire_packet_name(inp, wire_packet)?;
 	let ty = read_u16(inp)?;
 	let class = read_u16(inp)?;
 	if class != 1 { return Err(()); } // We only support the INternet
-	let _ttl = read_u32(inp)?;
+	let ttl = read_u32(inp)?;
 	let data_len = read_u16(inp)? as usize;
 	if inp.len() < data_len { return Err(()); }
 	let data = &inp[..data_len];
 	*inp = &inp[data_len..];
 
-	match ty {
-		A::TYPE => Ok(RR::A(A::read_from_data(name, data, wire_packet)?)),
-		AAAA::TYPE => Ok(RR::AAAA(AAAA::read_from_data(name, data, wire_packet)?)),
-		NS::TYPE => Ok(RR::NS(NS::read_from_data(name, data, wire_packet)?)),
-		Txt::TYPE => Ok(RR::Txt(Txt::read_from_data(name, data, wire_packet)?)),
-		CName::TYPE => Ok(RR::CName(CName::read_from_data(name, data, wire_packet)?)),
-		TLSA::TYPE => Ok(RR::TLSA(TLSA::read_from_data(name, data, wire_packet)?)),
-		DnsKey::TYPE => Ok(RR::DnsKey(DnsKey::read_from_data(name, data, wire_packet)?)),
-		DS::TYPE => Ok(RR::DS(DS::read_from_data(name, data, wire_packet)?)),
-		RRSig::TYPE => Ok(RR::RRSig(RRSig::read_from_data(name, data, wire_packet)?)),
-		_ => Err(()),
-	}
+	let rr = match ty {
+		A::TYPE => RR::A(A::read_from_data(name, data, wire_packet)?),
+		AAAA::TYPE => RR::AAAA(AAAA::read_from_data(name, data, wire_packet)?),
+		NS::TYPE => RR::NS(NS::read_from_data(name, data, wire_packet)?),
+		Txt::TYPE => RR::Txt(Txt::read_from_data(name, data, wire_packet)?),
+		CName::TYPE => RR::CName(CName::read_from_data(name, data, wire_packet)?),
+		TLSA::TYPE => RR::TLSA(TLSA::read_from_data(name, data, wire_packet)?),
+		DnsKey::TYPE => RR::DnsKey(DnsKey::read_from_data(name, data, wire_packet)?),
+		DS::TYPE => RR::DS(DS::read_from_data(name, data, wire_packet)?),
+		RRSig::TYPE => RR::RRSig(RRSig::read_from_data(name, data, wire_packet)?),
+		_ => return Err(()),
+	};
+	Ok((rr, ttl))
 }
 
 pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
-	parse_wire_packet_rr(inp, &[])
+	parse_wire_packet_rr(inp, &[]).map(|(rr, _)| rr)
 }
 
 pub(crate) fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])

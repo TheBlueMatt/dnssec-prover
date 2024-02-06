@@ -83,8 +83,8 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>) -> Result<Option<RRSig>, Er
 	// Only read the answers (skip authorities and additional) as that's all we care about.
 	let mut rrsig_opt = None;
 	for _ in 0..answers {
-		let rr = emap(parse_wire_packet_rr(&mut read, &resp))?;
-		write_rr(&rr, 0, proof);
+		let (rr, ttl) = emap(parse_wire_packet_rr(&mut read, &resp))?;
+		write_rr(&rr, ttl, proof);
 		if let RR::RRSig(rrsig) = rr { rrsig_opt = Some(rrsig); }
 	}
 	Ok(rrsig_opt)
