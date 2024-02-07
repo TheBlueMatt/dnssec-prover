@@ -110,10 +110,10 @@ mod imp {
 						break 'ret_err;
 					};
 					let proof_res = match t.to_ascii_uppercase().as_str() {
-						"TXT" => build_txt_proof_async(resolver_sockaddr, query_name).await,
-						"TLSA" => build_tlsa_proof_async(resolver_sockaddr, query_name).await,
-						"A" => build_a_proof_async(resolver_sockaddr, query_name).await,
-						"AAAA" => build_aaaa_proof_async(resolver_sockaddr, query_name).await,
+						"TXT" => build_txt_proof_async(resolver_sockaddr, &query_name).await,
+						"TLSA" => build_tlsa_proof_async(resolver_sockaddr, &query_name).await,
+						"A" => build_a_proof_async(resolver_sockaddr, &query_name).await,
+						"AAAA" => build_aaaa_proof_async(resolver_sockaddr, &query_name).await,
 						_ => break 'ret_err,
 					};
 					let proof = if let Ok(proof) = proof_res { proof } else {
