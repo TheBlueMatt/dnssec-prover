@@ -7,7 +7,7 @@ use core::cmp;
 use ring::signature;
 
 use crate::rr::*;
-use crate::ser::{bytes_to_rsa_pk, parse_rr, write_name};
+use crate::ser::write_name;
 
 /// Gets the trusted root anchors
 ///
@@ -30,30 +30,6 @@ pub fn root_hints() -> Vec<DS> {
 	res
 }
 
-/// Parse a stream of [`RR`]s from the format described in [RFC 9102](https://www.rfc-editor.org/rfc/rfc9102.html).
-///
-/// Note that this is only the series of `AuthenticationChain` records, and does not read the
-/// `ExtSupportLifetime` field at the start of a `DnssecChainExtension`.
-pub fn parse_rr_stream(mut inp: &[u8]) -> Result<Vec<RR>, ()> {
-	let mut res = Vec::with_capacity(32);
-	while !inp.is_empty() {
-		res.push(parse_rr(&mut inp)?);
-	}
-	Ok(res)
-}
-
-/// Writes the given resource record in its wire encoding to the given `Vec`.
-///
-/// An [RFC 9102](https://www.rfc-editor.org/rfc/rfc9102.html) `AuthenticationChain` is simply a
-/// series of such records with no additional bytes in between.
-pub fn write_rr<RR: Record>(rr: &RR, ttl: u32, out: &mut Vec<u8>) {
-	write_name(out, rr.name());
-	out.extend_from_slice(&rr.ty().to_be_bytes());
-	out.extend_from_slice(&1u16.to_be_bytes()); // The INternet class
-	out.extend_from_slice(&ttl.to_be_bytes());
-	rr.write_u16_len_prefixed_data(out);
-}
-
 #[derive(Debug, PartialEq)]
 /// An error when validating DNSSEC signatures or other data
 pub enum ValidationError {
@@ -66,6 +42,27 @@ pub enum ValidationError {
 	UnsupportedAlgorithm,
 	/// The provided data was invalid or signatures did not validate.
 	Invalid,
+}
+
+pub(crate) fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])
+-> Result<signature::RsaPublicKeyComponents<&'a [u8]>, ()> {
+	if pubkey.len() <= 3 { return Err(()); }
+
+	let mut pos = 0;
+	let exponent_length;
+	if pubkey[0] == 0 {
+		exponent_length = ((pubkey[1] as usize) << 8) | (pubkey[2] as usize);
+		pos += 3;
+	} else {
+		exponent_length = pubkey[0] as usize;
+		pos += 1;
+	}
+
+	if pubkey.len() <= pos + exponent_length { return Err(()); }
+	Ok(signature::RsaPublicKeyComponents {
+		n: &pubkey[pos + exponent_length..],
+		e: &pubkey[pos..pos + exponent_length]
+	})
 }
 
 fn verify_rrsig<'a, RR: Record, Keys>(sig: &RRSig, dnskeys: Keys, mut records: Vec<&RR>)
@@ -357,6 +354,8 @@ mod tests {
 	use super::*;
 
 	use alloc::borrow::ToOwned;
+
+	use crate::ser::{parse_rr_stream, write_rr};
 
 	use hex_conservative::FromHex;
 	use rand::seq::SliceRandom;

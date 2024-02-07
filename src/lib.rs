@@ -13,6 +13,17 @@
 //!
 //! It is no-std (but requires `alloc`) and seeks to have minimal dependencies and a reasonably
 //! conservative MSRV policy, allowing it to be used in as many places as possible.
+//!
+//! Most of the crate's logic is feature-gated:
+//!  * By default, the `validate` feature is set, using `ring` to validate DNSSEC signatures and
+//!    proofs using the [`validation`] module.
+//!  * The `std` feature enables the [`query`] module, allowing for the building of proofs by
+//!    querying a recursive resolver over TCP.
+//!  * The `tokio` feature further enables async versions of the [`query`] methods, doing the same
+//!    querying async using `tokio`'s TCP streams.
+//!  * Finally, the crate can be built as a binary using the `build_server` feature, responding to
+//!    queries over HTTP GET calls to `/dnssecproof?d=domain.name.&t=RecordType` with DNSSEC
+//!    proofs.
 
 #![deny(missing_docs)]
 
@@ -20,8 +31,10 @@
 extern crate alloc;
 
 pub mod rr;
+pub mod ser;
+
+#[cfg(feature = "validation")]
 pub mod validation;
-mod ser;
 
 #[cfg(feature = "std")]
 pub mod query;

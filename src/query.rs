@@ -9,8 +9,6 @@ use tokio_crate::net::TcpStream as TokioTcpStream;
 #[cfg(feature = "tokio")]
 use tokio_crate::io::{AsyncReadExt, AsyncWriteExt};
 
-
-use crate::validation::write_rr;
 use crate::rr::*;
 use crate::ser::*;
 
@@ -191,7 +189,7 @@ pub async fn build_tlsa_proof_async(resolver: SocketAddr, domain: Name) -> Resul
 	build_proof_async(resolver, domain, TLSA::TYPE).await
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "validation", test))]
 mod tests {
 	use super::*;
 	use crate::validation::*;

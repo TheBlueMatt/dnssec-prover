@@ -5,11 +5,13 @@
 extern crate alloc;
 
 pub mod rr;
-pub mod validation;
-mod ser;
+pub mod ser;
 pub mod query;
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "validation")]
+pub mod validation;
+
+#[cfg(any(feature = "build_server", all(feature = "tokio", feature = "validation")))]
 use tokio_crate as tokio;
 
 #[cfg(feature = "build_server")]
@@ -26,7 +28,7 @@ async fn main() {
 	imp::run_server(listener, resolver_sockaddr).await;
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "build_server", all(feature = "tokio", feature = "validation")))]
 mod imp {
 	use super::*;
 
@@ -134,7 +136,7 @@ mod imp {
 	}
 }
 
-#[cfg(all(feature = "tokio", test))]
+#[cfg(all(feature = "tokio", feature = "validation", test))]
 mod test {
 	use super::*;
 
@@ -150,6 +152,38 @@ mod test {
 		tokio::spawn(imp::run_server(listener, ns));
 		let resp = minreq::get(
 			"http://127.0.0.1:17492/dnssecproof?d=matt.user._bitcoin-payment.mattcorallo.com.&t=tXt"
+		).send().unwrap();
+
+		assert_eq!(resp.status_code, 200);
+		let rrs = parse_rr_stream(resp.as_bytes()).unwrap();
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+	}
+
+	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+	async fn test_lookup_a() {
+		let ns = "4.4.4.4:53".parse().unwrap();
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:17493").await
+			.expect("Failed to bind to socket");
+		tokio::spawn(imp::run_server(listener, ns));
+		let resp = minreq::get(
+			"http://127.0.0.1:17493/dnssecproof?d=cloudflare.com.&t=a"
+		).send().unwrap();
+
+		assert_eq!(resp.status_code, 200);
+		let rrs = parse_rr_stream(resp.as_bytes()).unwrap();
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+	}
+
+	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+	async fn test_lookup_tlsa() {
+		let ns = "1.1.1.1:53".parse().unwrap();
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:17494").await
+			.expect("Failed to bind to socket");
+		tokio::spawn(imp::run_server(listener, ns));
+		let resp = minreq::get(
+			"http://127.0.0.1:17494/dnssecproof?d=_25._tcp.mail.as397444.net.&t=TLSA"
 		).send().unwrap();
 
 		assert_eq!(resp.status_code, 200);

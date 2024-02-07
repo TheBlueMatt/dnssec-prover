@@ -1,9 +1,10 @@
 #!/bin/sh
 set -eox
+cargo test --no-default-features
 cargo test
-cargo test --features std
-cargo test --features tokio
-cargo test --features build_server
+cargo test --no-default-features --features std
+cargo test --no-default-features --features tokio
+cargo test --no-default-features --features build_server
 cargo build --lib
 cargo build --lib --features std
 cargo build --lib --features tokio

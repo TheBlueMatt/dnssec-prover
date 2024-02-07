@@ -1,9 +1,7 @@
-//! Serialization/Deserialization logic lives here
+//! Logic to read and write resource record (streams)
 
 use alloc::vec::Vec;
 use alloc::string::String;
-
-use ring::signature;
 
 use crate::rr::*;
 
@@ -56,6 +54,7 @@ pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Resu
 
 pub(crate) trait Writer { fn write(&mut self, buf: &[u8]); }
 impl Writer for Vec<u8> { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
+#[cfg(feature = "validation")]
 impl Writer for ring::digest::Context { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
 pub(crate) fn write_name<W: Writer>(out: &mut W, name: &str) {
 	let canonical_name = name.to_ascii_lowercase();
@@ -110,23 +109,26 @@ pub(crate) fn parse_rr(inp: &mut &[u8]) -> Result<RR, ()> {
 	parse_wire_packet_rr(inp, &[]).map(|(rr, _)| rr)
 }
 
-pub(crate) fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])
--> Result<signature::RsaPublicKeyComponents<&'a [u8]>, ()> {
-	if pubkey.len() <= 3 { return Err(()); }
-
-	let mut pos = 0;
-	let exponent_length;
-	if pubkey[0] == 0 {
-		exponent_length = ((pubkey[1] as usize) << 8) | (pubkey[2] as usize);
-		pos += 3;
-	} else {
-		exponent_length = pubkey[0] as usize;
-		pos += 1;
+/// Parse a stream of [`RR`]s from the format described in [RFC 9102](https://www.rfc-editor.org/rfc/rfc9102.html).
+///
+/// Note that this is only the series of `AuthenticationChain` records, and does not read the
+/// `ExtSupportLifetime` field at the start of a `DnssecChainExtension`.
+pub fn parse_rr_stream(mut inp: &[u8]) -> Result<Vec<RR>, ()> {
+	let mut res = Vec::with_capacity(32);
+	while !inp.is_empty() {
+		res.push(parse_rr(&mut inp)?);
 	}
+	Ok(res)
+}
 
-	if pubkey.len() <= pos + exponent_length { return Err(()); }
-	Ok(signature::RsaPublicKeyComponents {
-		n: &pubkey[pos + exponent_length..],
-		e: &pubkey[pos..pos + exponent_length]
-	})
+/// Writes the given resource record in its wire encoding to the given `Vec`.
+///
+/// An [RFC 9102](https://www.rfc-editor.org/rfc/rfc9102.html) `AuthenticationChain` is simply a
+/// series of such records with no additional bytes in between.
+pub fn write_rr<RR: Record>(rr: &RR, ttl: u32, out: &mut Vec<u8>) {
+	write_name(out, rr.name());
+	out.extend_from_slice(&rr.ty().to_be_bytes());
+	out.extend_from_slice(&1u16.to_be_bytes()); // The INternet class
+	out.extend_from_slice(&ttl.to_be_bytes());
+	rr.write_u16_len_prefixed_data(out);
 }
