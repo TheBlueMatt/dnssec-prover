@@ -14,7 +14,7 @@
 //! It is no-std (but requires `alloc`) and seeks to have minimal dependencies and a reasonably
 //! conservative MSRV policy, allowing it to be used in as many places as possible.
 //!
-//! Most of the crate's logic is feature-gated:
+//! Most of the crate's logic is feature-gated, and *all dependencies are optional*:
 //!  * By default, the `validate` feature is set, using `ring` to validate DNSSEC signatures and
 //!    proofs using the [`validation`] module.
 //!  * The `std` feature enables the [`query`] module, allowing for the building of proofs by

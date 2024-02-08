@@ -200,7 +200,8 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 /// Given a set of [`RR`]s, [`verify_rr_stream`] checks what it can and returns the set of
 /// non-[`RRSig`]/[`DnsKey`]/[`DS`] records which it was able to verify using this struct.
 ///
-/// It also contains
+/// It also contains signing and expiry times, which must be validated before considering the
+/// contained records verified.
 #[derive(Debug, Clone)]
 pub struct VerifiedRRStream<'a> {
 	/// The set of verified [`RR`]s.
