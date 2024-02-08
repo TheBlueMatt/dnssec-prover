@@ -69,6 +69,7 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>) -> Result<Option<RRSig>, Er
 	let questions = emap(read_u16(&mut read))?;
 	if questions != 1 { return Err(Error::new(ErrorKind::Other, "server responded to multiple Qs")); }
 	let answers = emap(read_u16(&mut read))?;
+	if answers == 0 { return Err(Error::new(ErrorKind::Other, "No answers")); }
 	let _authorities = emap(read_u16(&mut read))?;
 	let _additional = emap(read_u16(&mut read))?;
 
