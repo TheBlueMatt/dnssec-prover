@@ -122,13 +122,13 @@ mod imp {
 					};
 
 					let _ = socket.write_all(
-						format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", proof.len()).as_bytes()
+						format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nAccess-Control-Allow-Origin: *\r\n\r\n", proof.len()).as_bytes()
 					).await;
 					let _ = socket.write_all(&proof).await;
 					return;
 				}
 				let _ = socket.write_all(format!(
-					"HTTP/1.1 {}\r\nContent-Length: {}\r\nContent-Type: text/plain\r\n\r\n{}",
+					"HTTP/1.1 {}\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
 					response.0, response.1.len(), response.1,
 				).as_bytes()).await;
 			});
