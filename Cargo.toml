@@ -10,6 +10,9 @@ categories = ["cryptography", "no-std"]
 edition = "2021"
 rust-version = "1.60.0"
 
+[package.metadata.docs.rs]
+features = ["std", "validation", "tokio"]
+
 [features]
 default = ["validation"]
 std = []
