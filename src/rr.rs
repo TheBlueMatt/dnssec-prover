@@ -6,8 +6,10 @@
 use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::borrow::ToOwned;
+use alloc::format;
 
 use core::cmp::{self, Ordering};
+use core::fmt::Write;
 
 use crate::ser::*;
 
@@ -86,6 +88,20 @@ impl RR {
 			RR::RRSig(rr) => &rr.name,
 		}
 	}
+	/// Gets a JSON encoding of this record
+	pub fn json(&self) -> String {
+		match self {
+			RR::A(rr) => StaticRecord::json(rr),
+			RR::AAAA(rr) => StaticRecord::json(rr),
+			RR::NS(rr) => StaticRecord::json(rr),
+			RR::Txt(rr) => StaticRecord::json(rr),
+			RR::CName(rr) => StaticRecord::json(rr),
+			RR::TLSA(rr) => StaticRecord::json(rr),
+			RR::DnsKey(rr) => StaticRecord::json(rr),
+			RR::DS(rr) => StaticRecord::json(rr),
+			RR::RRSig(rr) => StaticRecord::json(rr),
+		}
+	}
 	fn ty(&self) -> u16 {
 		match self {
 			RR::A(_) => A::TYPE,
@@ -127,6 +143,7 @@ pub(crate) trait StaticRecord : Ord + Sized {
 	// http://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4
 	const TYPE: u16;
 	fn name(&self) -> &Name;
+	fn json(&self) -> String;
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
 	fn read_from_data(name: Name, data: &[u8], wire_packet: &[u8]) -> Result<Self, ()>;
 }
@@ -139,12 +156,15 @@ pub trait Record : Ord {
 	fn ty(&self) -> u16;
 	/// The name this record is at.
 	fn name(&self) -> &Name;
+	/// Gets a JSON encoding of this record.
+	fn json(&self) -> String;
 	/// Writes the data of this record, prefixed by a u16 length, to the given `Vec`.
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
 }
 impl<RR: StaticRecord> Record for RR {
 	fn ty(&self) -> u16 { RR::TYPE }
 	fn name(&self) -> &Name { RR::name(self) }
+	fn json(&self) -> String { RR::json(self) }
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		RR::write_u16_len_prefixed_data(self, out)
 	}
@@ -152,6 +172,7 @@ impl<RR: StaticRecord> Record for RR {
 impl Record for RR {
 	fn ty(&self) -> u16 { self.ty() }
 	fn name(&self) -> &Name { self.name() }
+	fn json(&self) -> String { self.json() }
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		self.write_u16_len_prefixed_data(out)
 	}
@@ -188,6 +209,14 @@ impl PartialOrd for Txt {
 impl StaticRecord for Txt {
 	const TYPE: u16 = 16;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		if let Ok(s) = core::str::from_utf8(&self.data) {
+			if s.chars().all(|c| !c.is_control() && c != '"') {
+				return format!("{{\"type\":\"txt\",\"name\":\"{}\",\"contents\":\"{}\"}}", self.name.0, s);
+			}
+		}
+		format!("{{\"type\":\"txt\",\"name\":\"{}\",\"contents\":{:?}}}", self.name.0, &self.data[..])
+	}
 	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		let mut parsed_data = Vec::with_capacity(data.len() - 1);
 		while !data.is_empty() {
@@ -237,6 +266,19 @@ pub struct TLSA {
 impl StaticRecord for TLSA {
 	const TYPE: u16 = 52;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(128+self.data.len()*2);
+		write!(&mut out,
+			"{{\"type\":\"tlsa\",\"name\":\"{}\",\"usage\":{},\"selector\":{},\"data_ty\":{},\"data\":\"",
+			self.name.0, self.cert_usage, self.selector, self.data_ty
+		).expect("Write to a String shouldn't fail");
+		for c in self.data.iter() {
+			write!(&mut out, "{:02X}", c)
+				.expect("Write to a String shouldn't fail");
+		}
+		out += "\"}";
+		out
+	}
 	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(TLSA {
 			name, cert_usage: read_u8(&mut data)?, selector: read_u8(&mut data)?,
@@ -264,6 +306,10 @@ pub struct CName {
 impl StaticRecord for CName {
 	const TYPE: u16 = 5;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		format!("{{\"type\":\"cname\",\"name\":\"{}\",\"canonical_name\":\"{}\"}}",
+			self.name.0, self.canonical_name.0)
+	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(CName { name, canonical_name: read_wire_packet_name(&mut data, wire_packet)? })
 	}
@@ -291,6 +337,19 @@ pub struct DnsKey {
 impl StaticRecord for DnsKey {
 	const TYPE: u16 = 48;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(128+self.pubkey.len()*2);
+		write!(&mut out,
+			"{{\"type\":\"dnskey\",\"name\":\"{}\",\"flags\":{},\"protocol\":{},\"alg\":{},\"pubkey\":\"",
+			self.name.0, self.flags, self.protocol, self.alg
+		).expect("Write to a String shouldn't fail");
+		for c in self.pubkey.iter() {
+			write!(&mut out, "{:02X}", c)
+				.expect("Write to a String shouldn't fail");
+		}
+		out += "\"}";
+		out
+	}
 	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(DnsKey {
 			name, flags: read_u16(&mut data)?, protocol: read_u8(&mut data)?,
@@ -349,6 +408,19 @@ pub struct DS {
 impl StaticRecord for DS {
 	const TYPE: u16 = 43;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(128+self.digest.len()*2);
+		write!(&mut out,
+			"{{\"type\":\"ds\",\"name\":\"{}\",\"key_tag\":{},\"alg\":{},\"digest_type\":{},\"digest\":\"",
+			self.name.0, self.key_tag, self.alg, self.digest_type
+		).expect("Write to a String shouldn't fail");
+		for c in self.digest.iter() {
+			write!(&mut out, "{:02X}", c)
+				.expect("Write to a String shouldn't fail");
+		}
+		out += "\"}";
+		out
+	}
 	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(DS {
 			name, key_tag: read_u16(&mut data)?, alg: read_u8(&mut data)?,
@@ -407,6 +479,19 @@ pub struct RRSig {
 impl StaticRecord for RRSig {
 	const TYPE: u16 = 46;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(256 + self.signature.len()*2);
+		write!(&mut out,
+			"{{\"type\":\"ds\",\"name\":\"{}\",\"signed_record_type\":{},\"alg\":{},\"signed_labels\":{},\"orig_ttl\":{},\"expiration\"{},\"inception\":{},\"key_tag\":{},\"key_name\":\"{}\",\"signature\":\"",
+			self.name.0, self.ty, self.alg, self.labels, self.orig_ttl, self.expiration, self.inception, self.key_tag, self.key_name.0
+		).expect("Write to a String shouldn't fail");
+		for c in self.signature.iter() {
+			write!(&mut out, "{:02X}", c)
+				.expect("Write to a String shouldn't fail");
+		}
+		out += "\"}";
+		out
+	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(RRSig {
 			name, ty: read_u16(&mut data)?, alg: read_u8(&mut data)?,
@@ -443,6 +528,9 @@ pub struct A {
 impl StaticRecord for A {
 	const TYPE: u16 = 1;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		format!("{{\"type\":\"a\",\"name\":\"{}\",\"address\":{:?}}}", self.name.0, self.address)
+	}
 	fn read_from_data(name: Name, data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		if data.len() != 4 { return Err(()); }
 		let mut address = [0; 4];
@@ -466,6 +554,9 @@ pub struct AAAA {
 impl StaticRecord for AAAA {
 	const TYPE: u16 = 28;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		format!("{{\"type\":\"aaaa\",\"name\":\"{}\",\"address\":{:?}}}", self.name.0, self.address)
+	}
 	fn read_from_data(name: Name, data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
 		if data.len() != 16 { return Err(()); }
 		let mut address = [0; 16];
@@ -494,6 +585,9 @@ pub struct NS {
 impl StaticRecord for NS {
 	const TYPE: u16 = 2;
 	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		format!("{{\"type\":\"ns\",\"name\":\"{}\",\"ns\":\"{}\"}}", self.name.0, self.name_server.0)
+	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		Ok(NS { name, name_server: read_wire_packet_name(&mut data, wire_packet)? })
 	}

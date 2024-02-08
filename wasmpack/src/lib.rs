@@ -5,6 +5,8 @@ use dnssec_prover::validation::{verify_rr_stream, ValidationError};
 
 use wasm_bindgen::prelude::wasm_bindgen;
 
+use core::fmt::Write;
+
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -21,10 +23,13 @@ fn do_verify_byte_stream(stream: Vec<u8>) -> Result<String, ValidationError> {
 	let rrs = parse_rr_stream(&stream).map_err(|()| ValidationError::Invalid)?;
 	let verified_rrs = verify_rr_stream(&rrs)?;
 	let mut resp = String::new();
-	resp += &format!("{{\"valid_from\": {}, \"expires\": {}, \"max_cache_ttl\": {}, \"verified_rrs\": [",
-		verified_rrs.valid_from, verified_rrs.expires, verified_rrs.max_cache_ttl);
+	write!(&mut resp, "{}",
+		format_args!("{{\"valid_from\": {}, \"expires\": {}, \"max_cache_ttl\": {}, \"verified_rrs\": [",
+		verified_rrs.valid_from, verified_rrs.expires, verified_rrs.max_cache_ttl)
+	).expect("Write to a String shouldn't fail");
 	for (idx, rr) in verified_rrs.verified_rrs.iter().enumerate() {
-		resp += &format!("{}\"{:?}\"", if idx != 0 { ", " } else { "" }, rr);
+		write!(&mut resp, "{}{}", if idx != 0 { ", " } else { "" }, rr.json())
+			.expect("Write to a String shouldn't fail");
 	}
 	resp += "]}";
 	Ok(resp)
