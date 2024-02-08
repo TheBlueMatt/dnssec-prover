@@ -116,13 +116,16 @@ mod imp {
 						"AAAA" => build_aaaa_proof_async(resolver_sockaddr, &query_name).await,
 						_ => break 'ret_err,
 					};
-					let proof = if let Ok(proof) = proof_res { proof } else {
+					let (proof, cache_ttl) = if let Ok(proof) = proof_res { proof } else {
 						response = ("404 Not Found", "Failed to generate proof for given domain");
 						break 'ret_err;
 					};
 
 					let _ = socket.write_all(
-						format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nAccess-Control-Allow-Origin: *\r\n\r\n", proof.len()).as_bytes()
+						format!(
+							"HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nCache-Control: public, max-age={}, s-maxage={}\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
+							proof.len(), cache_ttl, cache_ttl
+						).as_bytes()
 					).await;
 					let _ = socket.write_all(&proof).await;
 					return;
