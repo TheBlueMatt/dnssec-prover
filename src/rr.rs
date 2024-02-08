@@ -33,7 +33,7 @@ impl TryFrom<String> for Name {
 		if s.is_empty() { return Err(()); }
 		if *s.as_bytes().last().unwrap_or(&0) != b"."[0] { return Err(()); }
 		if s.len() > 255 { return Err(()); }
-		if s.chars().any(|c| !c.is_ascii_graphic() && c != '.' && c != '-') { return Err(()); }
+		if s.chars().any(|c| !c.is_ascii_graphic() || c == '"') { return Err(()); }
 		for label in s.split(".") {
 			if label.len() > 63 { return Err(()); }
 		}
