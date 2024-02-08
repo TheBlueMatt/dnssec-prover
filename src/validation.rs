@@ -162,7 +162,7 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 	let mut had_ds = false;
 	for ds in dses.clone() {
 		had_ds = true;
-		if ds.digest_type == 2 || ds.digest_type == 4 {
+		if ds.digest_type == 1 || ds.digest_type == 2 || ds.digest_type == 4 {
 			had_known_digest_type = true;
 			break;
 		}
@@ -171,11 +171,13 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 	if !had_known_digest_type { return Err(ValidationError::UnsupportedAlgorithm); }
 
 	for dnskey in records.iter() {
+		// Only use SHA1 DS records if we don't have any SHA256/SHA384 DS RRs.
+		let trust_sha1 = dses.clone().all(|ds| ds.digest_type != 2 && ds.digest_type != 4);
 		for ds in dses.clone() {
-			if ds.digest_type != 2 && ds.digest_type != 4 { continue; }
 			if ds.alg != dnskey.alg { continue; }
 			if dnskey.key_tag() == ds.key_tag {
 				let alg = match ds.digest_type {
+					1 if trust_sha1 => &ring::digest::SHA1_FOR_LEGACY_USE_ONLY,
 					2 => &ring::digest::SHA256,
 					4 => &ring::digest::SHA384,
 					_ => continue,
