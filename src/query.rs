@@ -262,6 +262,31 @@ mod tests {
 		assert!(verified_rrs.expires > now);
 	}
 
+	#[test]
+	fn test_cname_query() {
+		for resolver in ["1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"] {
+			let sockaddr = resolver.to_socket_addrs().unwrap().next().unwrap();
+			let query_name = "cname_test.matcorallo.com.".try_into().unwrap();
+			let (proof, _) = build_txt_proof(sockaddr, &query_name).unwrap();
+
+			let mut rrs = parse_rr_stream(&proof).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			let verified_rrs = verify_rr_stream(&rrs).unwrap();
+			assert_eq!(verified_rrs.verified_rrs.len(), 2);
+
+			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+			assert!(verified_rrs.valid_from < now);
+			assert!(verified_rrs.expires > now);
+
+			let resolved_rrs = verified_rrs.resolve_name(&query_name);
+			assert_eq!(resolved_rrs.len(), 1);
+			if let RR::Txt(txt) = &resolved_rrs[0] {
+				assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
+				assert_eq!(txt.data, b"dnssec_prover_test");
+			} else { panic!(); }
+		}
+	}
+
 	#[cfg(feature = "tokio")]
 	use tokio_crate as tokio;
 

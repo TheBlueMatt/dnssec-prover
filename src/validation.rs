@@ -350,6 +350,29 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	}
 }
 
+impl<'a> VerifiedRRStream<'a> {
+	/// Given a name, resolve any [`CName`] records and return any verified records which were
+	/// pointed to by the original name.
+	///
+	/// Note that because of [`CName`]s, the [`RR::name`] in the returned records may or may not be
+	/// equal to `name`.
+	///
+	/// You MUST still check that the current UNIX time is between
+	/// [`VerifiedRRStream::valid_from`] and [`VerifiedRRStream::expires`] before
+	/// using any records returned here.
+	pub fn resolve_name<'b>(&self, mut name: &'b Name) -> Vec<&'a RR> where 'a: 'b {
+		loop {
+			let mut cname_search = self.verified_rrs.iter()
+				.filter(|rr| rr.name() == name)
+				.filter_map(|rr| if let RR::CName(cn) = rr { Some(cn) } else { None });
+			if let Some(cname) = cname_search.next() {
+				name = &cname.canonical_name;
+			}
+			return self.verified_rrs.iter().filter(|rr| rr.name() == name).map(|rr| *rr).collect();
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	#![allow(deprecated)]
@@ -664,6 +687,14 @@ mod tests {
 			assert_eq!(cname.name.as_str(), "cname_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.as_str(), "txt_test.matcorallo.com.");
 		} else { panic!(); }
+
+		let filtered_rrs =
+			verified_rrs.resolve_name(&"cname_test.matcorallo.com.".try_into().unwrap());
+		assert_eq!(filtered_rrs.len(), 1);
+		if let RR::Txt(txt) = &filtered_rrs[0] {
+			assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
+			assert_eq!(txt.data, b"dnssec_prover_test");
+		} else { panic!(); }
 	}
 
 	#[test]
@@ -696,6 +727,14 @@ mod tests {
 		if let RR::CName(cname) = &verified_rrs.verified_rrs[1] {
 			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.matcorallo.com.");
 			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.matcorallo.com.");
+		} else { panic!(); }
+
+		let filtered_rrs =
+			verified_rrs.resolve_name(&"test.cname_wildcard_test.matcorallo.com.".try_into().unwrap());
+		assert_eq!(filtered_rrs.len(), 1);
+		if let RR::Txt(txt) = &filtered_rrs[0] {
+			assert_eq!(txt.name.as_str(), "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(txt.data, b"wildcard_test");
 		} else { panic!(); }
 	}
 
