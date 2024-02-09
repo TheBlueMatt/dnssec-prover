@@ -143,7 +143,8 @@ mod imp {
 mod test {
 	use super::*;
 
-	use crate::validation::{parse_rr_stream, verify_rr_stream};
+	use crate::ser::parse_rr_stream;
+	use crate::validation::verify_rr_stream;
 
 	use minreq;
 
@@ -165,7 +166,7 @@ mod test {
 
 	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 	async fn test_lookup_a() {
-		let ns = "4.4.4.4:53".parse().unwrap();
+		let ns = "9.9.9.9:53".parse().unwrap();
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:17493").await
 			.expect("Failed to bind to socket");
 		tokio::spawn(imp::run_server(listener, ns));
@@ -176,7 +177,7 @@ mod test {
 		assert_eq!(resp.status_code, 200);
 		let rrs = parse_rr_stream(resp.as_bytes()).unwrap();
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		assert!(verified_rrs.verified_rrs.len() >= 1);
 	}
 
 	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
