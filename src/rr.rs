@@ -300,7 +300,7 @@ pub struct CName {
 	pub name: Name,
 	/// The canonical name.
 	///
-	/// A resolver should use this name when looking up any further records for [`Self::name`].
+	/// A resolver should use this name when looking up any further records for [`self.name`].
 	pub canonical_name: Name,
 }
 impl StaticRecord for CName {
@@ -385,7 +385,7 @@ impl DnsKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 /// A Delegation Signer resource record which indicates that some alternative [`DnsKey`] can sign
-/// for records in the zone which matches [`DS::name`].
+/// for records in the zone which matches [`self.name`].
 pub struct DS {
 	/// The name this record is at.
 	///
@@ -447,7 +447,7 @@ pub struct RRSig {
 	pub name: Name,
 	/// The resource record type which this [`RRSig`] is signing.
 	///
-	/// All resources records of this type at the same name as [`Self::name`] must be signed by
+	/// All resources records of this type at the same name as [`self.name`] must be signed by
 	/// this [`RRSig`].
 	pub ty: u16,
 	/// The algorithm which is being used to sign.
@@ -456,7 +456,7 @@ pub struct RRSig {
 	pub alg: u8,
 	/// The number of labels in the name of the records that this signature is signing.
 	///
-	/// If this is less than the number of labels in [`Self::name`], this signature is covering a
+	/// If this is less than the number of labels in [`self.name`], this signature is covering a
 	/// wildcard entry.
 	pub labels: u8,
 	/// The TTL of the records which this [`RRSig`] is signing.
@@ -471,7 +471,11 @@ pub struct RRSig {
 	pub key_tag: u16,
 	/// The [`DnsKey::name`] in the [`DnsKey`] which created this signature.
 	///
-	/// This must be a parent of the [`Self::name`].
+	/// This must be a parent of [`self.name`].
+	///
+	/// [`DnsKey::name`]: Record::name
+	// We'd like to just link to the `DnsKey` member variable called `name`, but there doesn't
+	// appear to be a way to actually do that, so instead we have to link to the trait method.
 	pub key_name: Name,
 	/// The signature itself.
 	pub signature: Vec<u8>,
@@ -578,7 +582,7 @@ pub struct NS {
 	/// This is also the zone which the server at [`Self::name_server`] is responsible for handling
 	/// queries for.
 	pub name: Name,
-	/// The name of the server which is responsible for handling queries for the [`Self::name`]
+	/// The name of the server which is responsible for handling queries for the [`self.name`]
 	/// zone.
 	pub name_server: Name,
 }

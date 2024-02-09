@@ -209,7 +209,7 @@ pub struct VerifiedRRStream<'a> {
 	/// The set of verified [`RR`]s.
 	///
 	/// These are not valid unless the current UNIX time is between [`Self::valid_from`] and
-	/// [`Self::expiration`].
+	/// [`Self::expires`].
 	pub verified_rrs: Vec<&'a RR>,
 	/// The latest [`RRSig::inception`] of all the [`RRSig`]s validated to verify
 	/// [`Self::verified_rrs`].
@@ -253,8 +253,8 @@ fn resolve_time(time: u32) -> u64 {
 /// All records which could be validated are returned, though if an error is found validating any
 /// contained record, only `Err` will be returned.
 ///
-/// You MUST check that the current UNIX time is between [`VerifiedRRStream::latest_inception`] and
-/// [`VerifiedRRStream::earliest_expiry`].
+/// You MUST check that the current UNIX time is between [`VerifiedRRStream::valid_from`] and
+/// [`VerifiedRRStream::expires`].
 pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, ValidationError> {
 	let mut zone = ".";
 	let mut res = Vec::new();

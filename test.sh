@@ -9,3 +9,4 @@ cargo build --lib
 cargo build --lib --features std
 cargo build --lib --features tokio
 cargo build --bin http_proof_gen --features build_server
+cargo doc --features std,tokio,validation
