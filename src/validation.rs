@@ -89,7 +89,7 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			signed_data.extend_from_slice(&sig.key_tag.to_be_bytes());
 			write_name(&mut signed_data, &sig.key_name);
 
-			records.sort();
+			records.sort_unstable();
 
 			for record in records.iter() {
 				let periods = record.name().as_str().chars().filter(|c| *c == '.').count();
