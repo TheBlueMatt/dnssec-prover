@@ -1,6 +1,6 @@
 [package]
 name = "dnssec-prover"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Matt Corallo"]
 license = "MIT OR Apache-2.0"
 repository = "https://git.bitcoin.ninja/index.cgi?p=dnssec-prover"
