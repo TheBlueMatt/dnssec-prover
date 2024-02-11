@@ -170,24 +170,36 @@ async fn build_proof_async(resolver: SocketAddr, domain: &Name, ty: u16) -> Resu
 
 /// Builds a DNSSEC proof for an A record by querying a recursive resolver, returning the proof as
 /// well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 pub fn build_a_proof(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof(resolver, domain, A::TYPE)
 }
 
 /// Builds a DNSSEC proof for an AAAA record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 pub fn build_aaaa_proof(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof(resolver, domain, AAAA::TYPE)
 }
 
 /// Builds a DNSSEC proof for an TXT record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 pub fn build_txt_proof(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof(resolver, domain, Txt::TYPE)
 }
 
 /// Builds a DNSSEC proof for an TLSA record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 pub fn build_tlsa_proof(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof(resolver, domain, TLSA::TYPE)
 }
@@ -195,6 +207,9 @@ pub fn build_tlsa_proof(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>,
 
 /// Builds a DNSSEC proof for an A record by querying a recursive resolver, returning the proof as
 /// well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 #[cfg(feature = "tokio")]
 pub async fn build_a_proof_async(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof_async(resolver, domain, A::TYPE).await
@@ -202,6 +217,9 @@ pub async fn build_a_proof_async(resolver: SocketAddr, domain: &Name) -> Result<
 
 /// Builds a DNSSEC proof for an AAAA record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 #[cfg(feature = "tokio")]
 pub async fn build_aaaa_proof_async(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof_async(resolver, domain, AAAA::TYPE).await
@@ -209,6 +227,9 @@ pub async fn build_aaaa_proof_async(resolver: SocketAddr, domain: &Name) -> Resu
 
 /// Builds a DNSSEC proof for an TXT record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 #[cfg(feature = "tokio")]
 pub async fn build_txt_proof_async(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof_async(resolver, domain, Txt::TYPE).await
@@ -216,6 +237,9 @@ pub async fn build_txt_proof_async(resolver: SocketAddr, domain: &Name) -> Resul
 
 /// Builds a DNSSEC proof for an TLSA record by querying a recursive resolver, returning the proof
 /// as well as the TTL for the proof provided by the recursive resolver.
+///
+/// Note that this proof is NOT verified in any way, you need to use the [`crate::validation`]
+/// module to validate the records contained.
 #[cfg(feature = "tokio")]
 pub async fn build_tlsa_proof_async(resolver: SocketAddr, domain: &Name) -> Result<(Vec<u8>, u32), Error> {
 	build_proof_async(resolver, domain, TLSA::TYPE).await
