@@ -9,6 +9,7 @@ use alloc::borrow::ToOwned;
 use alloc::format;
 
 use core::cmp::{self, Ordering};
+use core::fmt;
 use core::fmt::Write;
 
 use crate::ser::*;
@@ -26,6 +27,11 @@ impl Name {
 impl core::ops::Deref for Name {
 	type Target = str;
 	fn deref(&self) -> &str { &self.0 }
+}
+impl fmt::Display for Name {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		self.0.fmt(f)
+	}
 }
 impl TryFrom<String> for Name {
 	type Error = ();
