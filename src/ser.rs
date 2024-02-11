@@ -25,16 +25,16 @@ pub(crate) fn read_u32(inp: &mut &[u8]) -> Result<u32, ()> {
 	Ok(u32::from_be_bytes(bytes))
 }
 
-fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String) -> Result<(), ()> {
+fn do_read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String, recursion_limit: usize) -> Result<(), ()> {
 	loop {
 		let len = read_u8(inp)? as usize;
 		if len == 0 {
 			if name.is_empty() { *name += "."; }
 			break;
-		} else if len >= 0xc0 {
+		} else if len >= 0xc0 && recursion_limit > 0 {
 			let offs = ((len & !0xc0) << 8) | read_u8(inp)? as usize;
 			if offs >= wire_packet.len() { return Err(()); }
-			read_wire_packet_labels(&mut &wire_packet[offs..], wire_packet, name)?;
+			do_read_wire_packet_labels(&mut &wire_packet[offs..], wire_packet, name, recursion_limit - 1)?;
 			break;
 		}
 		if inp.len() <= len { return Err(()); }
@@ -44,6 +44,10 @@ fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut Strin
 		if name.len() > 255 { return Err(()); }
 	}
 	Ok(())
+}
+
+fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String) -> Result<(), ()> {
+	do_read_wire_packet_labels(inp, wire_packet, name, 255)
 }
 
 pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Result<Name, ()> {
