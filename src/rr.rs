@@ -218,7 +218,7 @@ impl StaticRecord for Txt {
 		format!("{{\"type\":\"txt\",\"name\":\"{}\",\"contents\":{:?}}}", self.name.0, &self.data[..])
 	}
 	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
-		let mut parsed_data = Vec::with_capacity(data.len() - 1);
+		let mut parsed_data = Vec::with_capacity(data.len().saturating_sub(1));
 		while !data.is_empty() {
 			let len = read_u8(&mut data)? as usize;
 			if data.len() < len { return Err(()); }
