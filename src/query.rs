@@ -53,6 +53,13 @@ async fn send_query_async(stream: &mut TokioTcpStream, domain: &Name, ty: u16) -
 	Ok(())
 }
 
+#[cfg(fuzzing)]
+/// Read some input and parse it as if it came from a server, for fuzzing.
+pub fn fuzz_response(response: &[u8]) {
+	let (mut proof, mut names) = (Vec::new(), Vec::new());
+	let _ = handle_response(response, &mut proof, &mut names);
+}
+
 fn handle_response(resp: &[u8], proof: &mut Vec<u8>, rrsig_key_names: &mut Vec<Name>) -> Result<u32, Error> {
 	let mut read: &[u8] = resp;
 	if emap(read_u16(&mut read))? != TXID { return Err(Error::new(ErrorKind::Other, "bad txid")); }
