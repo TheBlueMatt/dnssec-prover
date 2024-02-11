@@ -111,7 +111,7 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 				record.write_u16_len_prefixed_data(&mut signed_data);
 			}
 
-			match sig.alg {
+			let sig_validation = match sig.alg {
 				8|10 => {
 					let alg = if sig.alg == 8 {
 						&signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY
@@ -120,7 +120,7 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 					};
 					bytes_to_rsa_pk(&dnskey.pubkey).map_err(|_| ValidationError::Invalid)?
 						.verify(alg, &signed_data, &sig.signature)
-						.map_err(|_| ValidationError::Invalid)?;
+						.map_err(|_| ValidationError::Invalid)
 				},
 				13|14 => {
 					let alg = if sig.alg == 13 {
@@ -136,15 +136,23 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 
 					signature::UnparsedPublicKey::new(alg, &key)
 						.verify(&signed_data, &sig.signature)
-						.map_err(|_| ValidationError::Invalid)?;
+						.map_err(|_| ValidationError::Invalid)
 				},
 				15 => {
 					signature::UnparsedPublicKey::new(&signature::ED25519, &dnskey.pubkey)
 						.verify(&signed_data, &sig.signature)
-						.map_err(|_| ValidationError::Invalid)?;
+						.map_err(|_| ValidationError::Invalid)
 				},
 				_ => return Err(ValidationError::UnsupportedAlgorithm),
+			};
+			#[cfg(fuzzing)] {
+				// When fuzzing, treat any signature starting with a 1 as valid, but only after
+				// parsing and checking signatures to give that code a chance to panic.
+				if sig.signature.get(0) == Some(&1) {
+					return Ok(());
+				}
 			}
+			sig_validation?;
 
 			return Ok(());
 		}

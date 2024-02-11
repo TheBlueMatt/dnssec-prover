@@ -44,3 +44,7 @@ opt-level = 1
 [[bin]]
 name = "parse_response"
 path = "src/parse_response.rs"
+
+[[bin]]
+name = "parse_stream_validate"
+path = "src/parse_stream_validate.rs"
