@@ -93,14 +93,12 @@ impl ops::DerefMut for QueryBuf {
 	}
 }
 
-// We don't care about transaction IDs as we're only going to accept signed data. Thus, we use
-// this constant instead of a random value.
-const TXID: u16 = 0x4242;
+// We don't care about transaction IDs as we're only going to accept signed data.
+// Further, if we're querying over DoH, the RFC says we SHOULD use a transaction ID of 0 here.
+const TXID: u16 = 0;
 
 fn build_query(domain: &Name, ty: u16) -> QueryBuf {
 	let mut query = QueryBuf::new_zeroed(0);
-	let query_msg_len: u16 = 2 + 2 + 8 + 2 + 2 + name_len(domain) + 11;
-	query.extend_from_slice(&query_msg_len.to_be_bytes());
 	query.extend_from_slice(&TXID.to_be_bytes());
 	query.extend_from_slice(&[0x01, 0x20]); // Flags: Recursive, Authenticated Data
 	query.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 1]); // One question, One additional
@@ -271,12 +269,14 @@ impl ProofBuilder {
 
 #[cfg(feature = "std")]
 fn send_query(stream: &mut TcpStream, query: &[u8]) -> Result<(), Error> {
+	stream.write_all(&(query.len() as u16).to_be_bytes())?;
 	stream.write_all(&query)?;
 	Ok(())
 }
 
 #[cfg(feature = "tokio")]
 async fn send_query_async(stream: &mut TokioTcpStream, query: &[u8]) -> Result<(), Error> {
+	stream.write_all(&(query.len() as u16).to_be_bytes()).await?;
 	stream.write_all(&query).await?;
 	Ok(())
 }
