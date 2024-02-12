@@ -183,6 +183,11 @@ const MAX_REQUESTS: usize = 10;
 /// [`ProofBuilder::process_response`] should be called, and each fresh query returned should be
 /// sent to the resolver. Once [`ProofBuilder::awaiting_responses`] returns false,
 /// [`ProofBuilder::finish_proof`] should be called to fetch the resulting proof.
+///
+/// To build a DNSSEC proof using a DoH server, take each [`QueryBuf`], encode it as base64url, and
+/// make a query to `https://doh-server/endpoint?dns=base64url_encoded_query` with an `Accept`
+/// header of `application/dns-message`. Each response, in raw binary, can be fed directly into
+/// [`ProofBuilder::process_response`].
 pub struct ProofBuilder {
 	proof: Vec<u8>,
 	min_ttl: u32,
