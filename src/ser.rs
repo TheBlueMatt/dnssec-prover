@@ -102,6 +102,7 @@ pub(crate) fn parse_wire_packet_rr(inp: &mut &[u8], wire_packet: &[u8]) -> Resul
 		NS::TYPE => RR::NS(NS::read_from_data(name, data, wire_packet)?),
 		Txt::TYPE => RR::Txt(Txt::read_from_data(name, data, wire_packet)?),
 		CName::TYPE => RR::CName(CName::read_from_data(name, data, wire_packet)?),
+		DName::TYPE => RR::DName(DName::read_from_data(name, data, wire_packet)?),
 		TLSA::TYPE => RR::TLSA(TLSA::read_from_data(name, data, wire_packet)?),
 		DnsKey::TYPE => RR::DnsKey(DnsKey::read_from_data(name, data, wire_packet)?),
 		DS::TYPE => RR::DS(DS::read_from_data(name, data, wire_packet)?),

@@ -72,6 +72,8 @@ pub enum RR {
 	TLSA(TLSA),
 	/// A Canonical Name record
 	CName(CName),
+	/// A Delegation Name record
+	DName(DName),
 	/// A DNS (Public) Key resource record
 	DnsKey(DnsKey),
 	/// A Delegated Signer resource record
@@ -88,6 +90,7 @@ impl RR {
 			RR::NS(rr) => &rr.name,
 			RR::Txt(rr) => &rr.name,
 			RR::CName(rr) => &rr.name,
+			RR::DName(rr) => &rr.name,
 			RR::TLSA(rr) => &rr.name,
 			RR::DnsKey(rr) => &rr.name,
 			RR::DS(rr) => &rr.name,
@@ -102,6 +105,7 @@ impl RR {
 			RR::NS(rr) => StaticRecord::json(rr),
 			RR::Txt(rr) => StaticRecord::json(rr),
 			RR::CName(rr) => StaticRecord::json(rr),
+			RR::DName(rr) => StaticRecord::json(rr),
 			RR::TLSA(rr) => StaticRecord::json(rr),
 			RR::DnsKey(rr) => StaticRecord::json(rr),
 			RR::DS(rr) => StaticRecord::json(rr),
@@ -115,6 +119,7 @@ impl RR {
 			RR::NS(_) => NS::TYPE,
 			RR::Txt(_) => Txt::TYPE,
 			RR::CName(_) => CName::TYPE,
+			RR::DName(_) => DName::TYPE,
 			RR::TLSA(_) => TLSA::TYPE,
 			RR::DnsKey(_) => DnsKey::TYPE,
 			RR::DS(_) => DS::TYPE,
@@ -128,6 +133,7 @@ impl RR {
 			RR::NS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::Txt(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::CName(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::DName(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::TLSA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::DnsKey(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::DS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
@@ -140,6 +146,7 @@ impl From<AAAA> for RR { fn from(aaaa: AAAA) -> RR { RR::AAAA(aaaa) } }
 impl From<NS> for RR { fn from(ns: NS) -> RR { RR::NS(ns) } }
 impl From<Txt> for RR { fn from(txt: Txt) -> RR { RR::Txt(txt) } }
 impl From<CName> for RR { fn from(cname: CName) -> RR { RR::CName(cname) } }
+impl From<DName> for RR { fn from(cname: DName) -> RR { RR::DName(cname) } }
 impl From<TLSA> for RR { fn from(tlsa: TLSA) -> RR { RR::TLSA(tlsa) } }
 impl From<DnsKey> for RR { fn from(dnskey: DnsKey) -> RR { RR::DnsKey(dnskey) } }
 impl From<DS> for RR { fn from(ds: DS) -> RR { RR::DS(ds) } }
@@ -329,6 +336,36 @@ impl StaticRecord for CName {
 		write_name(out, &self.canonical_name);
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A Delegation Name resource record, referring all queries for subdomains of this name to another
+/// subtree of the DNS.
+pub struct DName {
+	/// The name this record is at.
+	pub name: Name,
+	/// The delegation name.
+	///
+	/// A resolver should use this domain name tree when looking up any further records for
+	/// subdomains of [`self.name`].
+	pub delegation_name: Name,
+}
+impl StaticRecord for DName {
+	const TYPE: u16 = 39;
+	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		format!("{{\"type\":\"dname\",\"name\":\"{}\",\"delegation_name\":\"{}\"}}",
+			self.name.0, self.delegation_name.0)
+	}
+	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
+		Ok(DName { name, delegation_name: read_wire_packet_name(&mut data, wire_packet)? })
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		let len: u16 = name_len(&self.delegation_name);
+		out.extend_from_slice(&len.to_be_bytes());
+		write_name(out, &self.delegation_name);
+	}
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 /// A public key resource record which can be used to validate [`RRSig`]s.

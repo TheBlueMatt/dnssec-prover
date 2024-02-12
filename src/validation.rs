@@ -1,5 +1,6 @@
 //! Utilities to deserialize and validate RFC 9102 proofs
 
+use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 use alloc::vec;
 use core::cmp;
@@ -368,14 +369,34 @@ impl<'a> VerifiedRRStream<'a> {
 	/// You MUST still check that the current UNIX time is between
 	/// [`VerifiedRRStream::valid_from`] and [`VerifiedRRStream::expires`] before
 	/// using any records returned here.
-	pub fn resolve_name<'b>(&self, mut name: &'b Name) -> Vec<&'a RR> where 'a: 'b {
+	pub fn resolve_name<'b>(&self, name_param: &'b Name) -> Vec<&'a RR> where 'a: 'b {
+		let mut dname_name;
+		let mut name = name_param;
 		loop {
 			let mut cname_search = self.verified_rrs.iter()
 				.filter(|rr| rr.name() == name)
 				.filter_map(|rr| if let RR::CName(cn) = rr { Some(cn) } else { None });
 			if let Some(cname) = cname_search.next() {
 				name = &cname.canonical_name;
+				continue;
 			}
+
+			let mut dname_search = self.verified_rrs.iter()
+				.filter(|rr| name.ends_with(&**rr.name()))
+				.filter_map(|rr| if let RR::DName(dn) = rr { Some(dn) } else { None });
+			if let Some(dname) = dname_search.next() {
+				let prefix = name.strip_suffix(&*dname.name).expect("We just filtered for this");
+				let resolved_name = prefix.to_owned() + &dname.delegation_name;
+				dname_name = if let Ok(name) = resolved_name.try_into() {
+					name
+				} else {
+					// This should only happen if the combined name ended up being too long
+					return Vec::new();
+				};
+				name = &dname_name;
+				continue;
+			}
+
 			return self.verified_rrs.iter().filter(|rr| rr.name() == name).map(|rr| *rr).collect();
 		}
 	}
