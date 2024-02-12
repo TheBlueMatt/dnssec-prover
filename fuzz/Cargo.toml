@@ -48,3 +48,7 @@ path = "src/parse_response.rs"
 [[bin]]
 name = "parse_stream_validate"
 path = "src/parse_stream_validate.rs"
+
+[[bin]]
+name = "fuzz_builder"
+path = "src/fuzz_builder.rs"

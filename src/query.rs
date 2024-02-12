@@ -21,9 +21,9 @@ use crate::ser::*;
 // In testing use a rather small buffer to ensure we hit the allocation paths sometimes. In
 // production, we should generally never actually need to go to heap as DNS messages are rarely
 // larger than a KiB or two.
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 const STACK_BUF_LIMIT: u16 = 32;
-#[cfg(not(test))]
+#[cfg(not(any(test, fuzzing)))]
 const STACK_BUF_LIMIT: u16 = 2048;
 
 /// A buffer for storing queries and responses.
@@ -145,6 +145,21 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>, rrsig_key_names: &mut Vec<N
 		if let RR::RRSig(rrsig) = rr { rrsig_key_names.push(rrsig.key_name); }
 	}
 	Ok(min_ttl)
+}
+
+#[cfg(fuzzing)]
+/// Read a stream of responses and handle them it as if they came from a server, for fuzzing.
+pub fn fuzz_proof_builder(mut response_stream: &[u8]) {
+	let (mut builder, _) = ProofBuilder::new(&"example.com.".try_into().unwrap(), Txt::TYPE);
+	while builder.awaiting_responses() {
+		let len = if let Ok(len) = read_u16(&mut response_stream) { len } else { return };
+		let mut buf = QueryBuf::new_zeroed(len);
+		if response_stream.len() < len as usize { return; }
+		buf.copy_from_slice(&response_stream[..len as usize]);
+		response_stream = &response_stream[len as usize..];
+		let _ = builder.process_response(&buf);
+	}
+	let _ = builder.finish_proof();
 }
 
 const MAX_REQUESTS: usize = 10;
