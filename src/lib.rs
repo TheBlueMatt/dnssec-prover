@@ -34,9 +34,7 @@ extern crate alloc;
 
 pub mod rr;
 pub mod ser;
+pub mod query;
 
 #[cfg(feature = "validation")]
 pub mod validation;
-
-#[cfg(feature = "std")]
-pub mod query;

@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 
 use crate::rr::*;
+use crate::query::QueryBuf;
 
 pub(crate) fn read_u8(inp: &mut &[u8]) -> Result<u8, ()> {
 	let res = *inp.get(0).ok_or(())?;
@@ -58,6 +59,7 @@ pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Resu
 
 pub(crate) trait Writer { fn write(&mut self, buf: &[u8]); }
 impl Writer for Vec<u8> { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
+impl Writer for QueryBuf { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
 #[cfg(feature = "validation")]
 impl Writer for ring::digest::Context { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
 pub(crate) fn write_name<W: Writer>(out: &mut W, name: &str) {
