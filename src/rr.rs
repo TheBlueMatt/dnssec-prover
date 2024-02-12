@@ -195,6 +195,8 @@ pub struct Txt {
 	/// is an arbitrary series of bytes here.
 	pub data: Vec<u8>,
 }
+/// The wire type for TXT records
+pub const TXT_TYPE: u16 = 16;
 impl PartialOrd for Txt {
 	fn partial_cmp(&self, o: &Txt) -> Option<Ordering> {
 		Some(self.name.cmp(&o.name)
@@ -213,7 +215,7 @@ impl PartialOrd for Txt {
 	}
 }
 impl StaticRecord for Txt {
-	const TYPE: u16 = 16;
+	const TYPE: u16 = TXT_TYPE;
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		if let Ok(s) = core::str::from_utf8(&self.data) {
@@ -269,8 +271,10 @@ pub struct TLSA {
 	/// The certificate data or hash of the certificate data itself.
 	pub data: Vec<u8>,
 }
+/// The wire type for TLSA records
+pub const TLSA_TYPE: u16 = 52;
 impl StaticRecord for TLSA {
-	const TYPE: u16 = 52;
+	const TYPE: u16 = TLSA_TYPE;
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		let mut out = String::with_capacity(128+self.data.len()*2);
@@ -535,8 +539,10 @@ pub struct A {
 	/// The bytes of the IPv4 address.
 	pub address: [u8; 4],
 }
+/// The wire type for A records
+pub const A_TYPE: u16 = 1;
 impl StaticRecord for A {
-	const TYPE: u16 = 1;
+	const TYPE: u16 = A_TYPE;
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		format!("{{\"type\":\"a\",\"name\":\"{}\",\"address\":{:?}}}", self.name.0, self.address)
@@ -561,8 +567,10 @@ pub struct AAAA {
 	/// The bytes of the IPv6 address.
 	pub address: [u8; 16],
 }
+/// The wire type for AAAA records
+pub const AAAA_TYPE: u16 = 28;
 impl StaticRecord for AAAA {
-	const TYPE: u16 = 28;
+	const TYPE: u16 = AAAA_TYPE;
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		format!("{{\"type\":\"aaaa\",\"name\":\"{}\",\"address\":{:?}}}", self.name.0, self.address)
