@@ -425,8 +425,8 @@ mod tests {
 		}];
 		let dnskey_rrsig = RRSig {
 			name: ".".try_into().unwrap(), ty: DnsKey::TYPE, alg: 8, labels: 0, orig_ttl: 172800,
-			expiration: 1708473600, inception: 1706659200, key_tag: 20326, key_name: ".".try_into().unwrap(),
-			signature: base64::decode("ZO8LbjtwAiVkkBzOnGbiI/3ilGUPmmJpagsLSBVbIZRG6o/8a+hUZpIPTvk5ERZ1rAW4x0YxKAU8qtaHQpKIp3qYA6u97DYytVD7RdtXKHmGYAvR6QbD5eVTkCw1Sz705rJxbwt6+YM5OBweSUAy5Glo6JSQPDQwRDwj/bV2fLRhJbvfsBgxqaXJA0SaE/ceyvK8gB2NIaguTJNrztr2TENrHxi86OKOuHYDHthOW0TFoPfr19qj/P2eEC6dYniTVovUwHT7e+Hqrb05dJF4mI4ZjaIb5mFf8i5RehT1aRlnb3CLiwJ01bEjrRBo3xUn5I3PkCnglHhx3EvkO73OzA==").unwrap(),
+			expiration: 1709337600, inception: 1707523200, key_tag: 20326, key_name: ".".try_into().unwrap(),
+			signature: base64::decode("QXPpi2A4jXgS6/aH5ZPCT/iOr75XYdk9kxemYrLaVaUAiaOVLDcArPOC8vyv6BKrK0Mq/lht2ql/XARVokC97n1W7B7tpzTpsZle7Z9cTSvbQefI/vVmFZwp+4+mad2f+Tqa0ApQLWaFXEdrJ4IThswbIwpNp8e1w9HwTZHT/B5Jve+v3CLf8o73ScYaVebC5c76Ifh6M5lAknazUWJ9/j5vQ6yInQpcUR3t520HL+KPEcDfmDXB6GOLr/Psdk8QCfB3LJ4heDCaI0H+ae/YPzedpnihAVP+hzhlOzZ0vpj7QOh4lTQjN7UzWNY9XbK+EhZHXRQmCmYydAUP6FpMmQ==").unwrap(),
 		};
 		let root_hints = root_hints();
 		verify_dnskey_rrsig(&dnskey_rrsig, &root_hints, dnskeys.iter().collect()).unwrap();
@@ -442,8 +442,8 @@ mod tests {
 		}];
 		let ds_rrsig = RRSig {
 			name: "com.".try_into().unwrap(), ty: DS::TYPE, alg: 8, labels: 1, orig_ttl: 86400,
-			expiration: 1708189200, inception: 1707062400, key_tag: 30903, key_name: ".".try_into().unwrap(),
-			signature: base64::decode("vwMOBBwqRBdlmGZB+0FKfyMSignEtpYW9sD4TzPW2E+wdbF7O7epR5cmKmvcv0RUJdM0dGC/QmhCfgf/yqw1Xp7TpmPaYzaruW70hjGXZJO2nY3G6stUVe4S7lM2CzHL7nbbpaB5B+iSu6Ua9dZ+nyKrxfB7855HBLCLrHrkMGxWQiEPTallXXS8tEM1Y2XrsuzAQu2vZ2D2ClhFspFbPwwOdw+G6+NsZ8PnIfTkCj6DuKcgbdxjmGaYmw/6hVt9OU3kGCOBaJaEy4LrD8Kwzfu4S7axMwTKP4y4c5Y/E4k/mVAW0cuUtv549HaDfD2V0CvW1bDl6PqRkOiVsqM/lA==").unwrap(),
+			expiration: 1708794000, inception: 1707667200, key_tag: 30903, key_name: ".".try_into().unwrap(),
+			signature: base64::decode("RT9N7xNToOdDHGw+/gvWCeEk+HXR/VBlAymFR2OWaYCVD6FUXlAw4OZkvJPqpsA465R1+CApbWu0vsG3Op949QNqU0tDOZcnO3+dyf0vimQX8pI0XMwtrUM/KHkHHb+EWKywNHsMqOo83+b428YHtkidVXeToz/xjFTJLbAlgNJCAiq3FGuHo/x2fnccBiZB2spfW7Og6nhOBqAy5tUualgaCxMX3j5ZDoQ259HhVgbYdQvjd7H9sj0C4UHxm8Y0XY5J1gRnWIuylN1oLzwIqizGFPbknvFXA/GXfk3KInlpQoCnXWwHe8ZBEgxqcgJ8YLRDU8bj+bJ4nol53yntcA==").unwrap(),
 		};
 		verify_rrsig(&ds_rrsig, &root_dnskeys, com_ds.iter().collect()).unwrap();
 		let dnskeys = vec![DnsKey {
@@ -455,12 +455,46 @@ mod tests {
 		}];
 		let dnskey_rrsig = RRSig {
 			name: "com.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 1, orig_ttl: 86400,
-			expiration: 1707750155, inception: 1706453855, key_tag: 19718, key_name: "com.".try_into().unwrap(),
-			signature: base64::decode("ZFGChM7QfJt0QSqVWerWnG5pMjpL1pXyJAmuHe8dHI/olmaNCxm+mqNHv9i3AploFY6JoNtiHmeBiC6zuFj/ZQ==").unwrap(),
+			expiration: 1708614155, inception: 1707317855, key_tag: 19718, key_name: "com.".try_into().unwrap(),
+			signature: base64::decode("z1l579YFyZ1bD345+zwNUiGJQ9SAoSBdhfelmo9+cLFHF9wwtr/rJnsHt/T/75zCxzAXZGHw6FFcH5ZCe/mH4A==").unwrap(),
 		};
 		verify_dnskey_rrsig(&dnskey_rrsig, &com_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![com_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
+		(dnskeys, rrs)
+	}
+
+	fn ninja_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
+		let root_dnskeys = root_dnskey().0;
+		let mut ninja_ds = vec![DS {
+			name: "ninja.".try_into().unwrap(), key_tag: 46082, alg: 8, digest_type: 2,
+			digest: Vec::from_hex("C8F816A7A575BDB2F997F682AAB2653BA2CB5EDDB69B036A30742A33BEFAF141").unwrap(),
+		}];
+		let ds_rrsig = RRSig {
+			name: "ninja.".try_into().unwrap(), ty: DS::TYPE, alg: 8, labels: 1, orig_ttl: 86400,
+			expiration: 1708794000, inception: 1707667200, key_tag: 30903, key_name: ".".try_into().unwrap(),
+			signature: base64::decode("FO6kj+2lJF/VSDwkwh+h8NpkCzk9x7DES/3LQFnJf4NOnY7W+m86Usy79CP5t8YMiKZweOlUd8rmd1PkrX1zf0sQxqdWFPpKiDxh/tyhkyV/FiN8vvtXMaIUeDFWXTBM/Rap2oHigiRDsHwOd8fnG1+8bkY7HtXx54EZvieRZAvZd17wBj3L75UQHwIxJwpzbeZOF3583wcWoPOX70pp4Xzeryok0P++Qr7VPUpzEHAe4v4JePlODau38qyI1Bzr2pBQiTSgpBUI5vTtoGC4+aEMXjc0OBt6kMjncQA6B8GNqUqnBgfTdNNhXYFTWekBAres5w5SvVOKeS3no1eIRw==").unwrap(),
+		};
+		verify_rrsig(&ds_rrsig, &root_dnskeys, ninja_ds.iter().collect()).unwrap();
+		let dnskeys = vec![DnsKey {
+			name: "ninja.".try_into().unwrap(), flags: 256, protocol: 3, alg: 8,
+			pubkey: base64::decode("AwEAAZlkeshgX2Q9i/X4zZMc2ciKO2a3+mOiOCuYHYbwt/43XXdcHdjtOUrWFFJkGBBWsHQZ/Bg0CeUGqvUGywd3ndY5IAX+e7PnuIUlhKDcNmntcQbxhrH+cpmOoB3Xo/96JoVjurPxTuJE23I1oA+0aESc581f4pKEbTp4WI7m5xNn").unwrap(),
+		}, DnsKey {
+			name: "ninja.".try_into().unwrap(), flags: 256, protocol: 3, alg: 8,
+			pubkey: base64::decode("AwEAAb6FWe0O0qxUkA+LghF71OPWt0WNqBaCi34HCV6Agjz70RN/j7yGi3xCExM8MkzyrbXd5yYFP4X7TCGEzI5ofLNq7GVIj9laZO0WYS8DNdCMN7qkVVaYeR2UeeGsdvIJqRWzlynABAKnCzX+y5np77FBsle4cAIGxJE/0F5kn61F").unwrap(),
+		}, DnsKey {
+			name: "ninja.".try_into().unwrap(), flags: 257, protocol: 3, alg: 8,
+			pubkey: base64::decode("AwEAAcceTJ3Ekkmiez70L8uNVrTDrHZxXHrQHEHQ1DJZDRXDxizuSy0prDXy1yybMqcKAkPL0IruvJ9vHg5j2eHN/hM8RVqCQ1wHgLdQASyUL37VtmLuyNmuiFpYmT+njXVh/tzRHZ4cFxrLAtACWDe6YaPApnVkJ0FEcMnKCQaymBaLX02WQOYuG3XdBr5mQQTtMs/kR/oh83QBcSxyCg3KS7G8IPP6MQPK0za94gsW9zlI5rgN2gpSjbU2qViGjDhw7N3PsC37PLTSLirUmkufeMkP9sfhDjAbP7Nv6FmpTDAIRmBmV0HBT/YNBTUBP89DmEDsrYL8knjkrOaLqV5wgkk=").unwrap(),
+		}];
+		let dnskey_rrsig = RRSig {
+			name: "ninja.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 8, labels: 1, orig_ttl: 3600,
+			expiration: 1709309122, inception: 1707491122, key_tag: 46082, key_name: "ninja.".try_into().unwrap(),
+			signature: base64::decode("tZjyFUaRDCFZ8heFd5qWQs5CKAZHEzdv3OcR3IRcyfIebRkpPjXM/Wi/0cPnKkEh7PQx+GK3ZRsSz8Sd0VEmmH/DapTh5Fn+ZR7znnGVGDU7xvHRQZaIB33MMTqLBkKkjDkWi+G7cYe7PbfWRh5JOvcyUSZ21eKlAInaOJYrc9WNydN6EnXhDoMZJK8GWrM8AJdKJjpopqH3iEuu73WI9JZJQtzo4vdGyYwHvYAu9x14zCY1uKcBoCaohjP4K7KRvl+aRQETY175yFBfeCneExb2SJI6wMVEWwlQbeMImn2jmPjGcm0cZjYL6v+jj4T7Yq2xZirdvHoCtIeCXwv5Dg==").unwrap(),
+		};
+		verify_dnskey_rrsig(&dnskey_rrsig, &ninja_ds, dnskeys.iter().collect()).unwrap();
+		let rrs = vec![ninja_ds.pop().unwrap().into(), ds_rrsig.into(),
+			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskeys[2].clone().into(),
+			dnskey_rrsig.into()];
 		(dnskeys, rrs)
 	}
 
@@ -472,8 +506,8 @@ mod tests {
 		}];
 		let ds_rrsig = RRSig {
 			name: "mattcorallo.com.".try_into().unwrap(), ty: DS::TYPE, alg: 13, labels: 2, orig_ttl: 86400,
-			expiration: 1707631252, inception: 1707022252, key_tag: 4534, key_name: "com.".try_into().unwrap(),
-			signature: base64::decode("M7Fk+CjfLz6hRsY5iSuw5bwc2OqlS3XtKH8FDs7lcbhEiR63n+DzOF0I8L+3k06SXFnE89uuofQECzWmAyef6Q==").unwrap(),
+			expiration: 1707976967, inception: 1707367967, key_tag: 4534, key_name: "com.".try_into().unwrap(),
+			signature: base64::decode("QtgzO1czEOcGxvjuSqW4AlEMYr1gDSPRwYPvhmZOe06QU3dfXppv/+wEr1DNKY6BCjQ7fVXx0YFb7T3NfmLbHQ==").unwrap(),
 		};
 		verify_rrsig(&ds_rrsig, &com_dnskeys, mattcorallo_ds.iter().collect()).unwrap();
 		let dnskeys = vec![DnsKey {
@@ -485,8 +519,8 @@ mod tests {
 		}];
 		let dnskey_rrsig = RRSig {
 			name: "mattcorallo.com.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 2, orig_ttl: 604800,
-			expiration: 1708278650, inception: 1707063650, key_tag: 25630, key_name: "mattcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("nyVDwG+la8d5dyWgB7m+H3BQwCvTWLQ/kAqNruMzdLmn9B3VC9u/rvM/ortEu0WPbA1FZWJbRKpF1Ohkj3ltNw==").unwrap(),
+			expiration: 1708794127, inception: 1707579127, key_tag: 25630, key_name: "mattcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("aYgXNubpwB8RJMiE+pFl1/p40gfE6ov9riMGdIl+H7Ys+hvX+NYR+cJNBpfSeqOIXqPJqxnbEyZ1HE8LvK7i8g==").unwrap(),
 		};
 		verify_dnskey_rrsig(&dnskey_rrsig, &mattcorallo_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![mattcorallo_ds.pop().unwrap().into(), ds_rrsig.into(),
@@ -501,140 +535,140 @@ mod tests {
 		};
 		let txt_rrsig = RRSig {
 			name: "matt.user._bitcoin-payment.mattcorallo.com.".try_into().unwrap(),
-			ty: Txt::TYPE, alg: 13, labels: 5, orig_ttl: 3600, expiration: 1708123318,
-			inception: 1706908318, key_tag: 47959, key_name: "mattcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("mgU6iwyMWO0w9nj2Gmt1+RmaIJIU3KO7DWVZiCD1bmU9e9zNefXCtnWOC2HtwjUsn/QYkWluvuSfYpBrt1IjpQ==").unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 5, orig_ttl: 3600, expiration: 1708638126,
+			inception: 1707423126, key_tag: 47959, key_name: "mattcorallo.com.".try_into().unwrap(),
+			signature: base64::decode("DsVKNjv4e3m2sJyTPw9b4tpoDW/o/TrwLfFEQe1zOUn43kGqqCNUX1DqsaAtOeLlBuCVWEo1uT2qVc8MijH5ig==").unwrap(),
 		};
 		(txt_resp, txt_rrsig)
 	}
 
-	fn matcorallo_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
-		let com_dnskeys = com_dnskey().0;
-		let mut matcorallo_ds = vec![DS {
-			name: "matcorallo.com.".try_into().unwrap(), key_tag: 24930, alg: 13, digest_type: 2,
-			digest: Vec::from_hex("693E990CBB1CE1095E387092D3C04BCE907C008891F32A88D41D3ECB129E5E23").unwrap(),
+	fn bitcoin_ninja_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
+		let ninja_dnskeys = ninja_dnskey().0;
+		let mut bitcoin_ninja_ds = vec![DS {
+			name: "bitcoin.ninja.".try_into().unwrap(), key_tag: 63175, alg: 13, digest_type: 2,
+			digest: Vec::from_hex("D554267D7F730B9602BF4436F46BB967EFE3C4202CA7F082F2D5DD24DF4EBDED").unwrap(),
 		}];
 		let ds_rrsig = RRSig {
-			name: "matcorallo.com.".try_into().unwrap(), ty: DS::TYPE, alg: 13, labels: 2, orig_ttl: 86400,
-			expiration: 1707628636, inception: 1707019636, key_tag: 4534, key_name: "com.".try_into().unwrap(),
-			signature: base64::decode("l9b+DhtnJSIzR6y4Bwx+0L9kep77UNCBoTg74RTSL6oMrQd8w4OobHxzwDyXqnLfyxVP18V+AnQp4DdJ2nUW1g==").unwrap(),
+			name: "bitcoin.ninja.".try_into().unwrap(), ty: DS::TYPE, alg: 8, labels: 2, orig_ttl: 3600,
+			expiration: 1709309122, inception: 1707491122, key_tag: 34164, key_name: "ninja.".try_into().unwrap(),
+			signature: base64::decode("QDFgNQkC5IWkMH8VaOifnIbA+K/OnrPwQwAEwlTTtvXwElC+spF6rKSE1O26+vAIiGbY3LkwcVQHf3pQcgwS3gR3jbzaxyDAQ2RjshLaBJ/gA5BJA0lWyHKsQpmzBpcKf2XnRK6ZY6sUDrWURMoZp3+8qhWJux/3X3aKkr7ADU0=").unwrap(),
 		};
-		verify_rrsig(&ds_rrsig, &com_dnskeys, matcorallo_ds.iter().collect()).unwrap();
+		verify_rrsig(&ds_rrsig, &ninja_dnskeys, bitcoin_ninja_ds.iter().collect()).unwrap();
 		let dnskeys = vec![DnsKey {
-			name: "matcorallo.com.".try_into().unwrap(), flags: 257, protocol: 3, alg: 13,
-			pubkey: base64::decode("pfO3ow3SrKhLS7AMEi3b5W9P28nCOB9vryxfSXhqMcXFP1x9V4xAt0/JLr0zNodsqRD/8d9Yhu4Wf3hnSlaavw==").unwrap(),
+			name: "bitcoin.ninja.".try_into().unwrap(), flags: 257, protocol: 3, alg: 13,
+			pubkey: base64::decode("0lIZI5BH7kk75R/+1RMReQE0J2iQw0lY2aQ6eCM7F1E9ZMNcIGC1cDl5+FcAU1mP8F3Ws2FjgvCC0S2q8OBF2Q==").unwrap(),
 		}, DnsKey {
-			name: "matcorallo.com.".try_into().unwrap(), flags: 256, protocol: 3, alg: 13,
-			pubkey: base64::decode("OO6LQTV1mnRsFgn6YQoyeo/SDqS3eajfVv8WGQVnuSYO/bTS9St1tJiox2fgU6wRWDU3chhjz1Pj0unKUAQKig==").unwrap(),
+			name: "bitcoin.ninja.".try_into().unwrap(), flags: 256, protocol: 3, alg: 13,
+			pubkey: base64::decode("zbm2rKgzXDtRFV0wFmnlUMdOXWcNKEjGIHsZ7bAnTzbh7TJEzPctSttCaTvdaORxLL4AiOk+VG2iXnL2UuC/xQ==").unwrap(),
 		}];
 		let dnskey_rrsig = RRSig {
-			name: "matcorallo.com.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 2, orig_ttl: 604800,
-			expiration: 1708309135, inception: 1707094135, key_tag: 24930, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("2MKg3bTn9zf4ThwCoKRFadqD6l1D6SuLksRieKxFC0QQnzUOCRgZSK2/IlT0DMEoM0+mGrJZo7UG79UILMGUyg==").unwrap(),
+			name: "bitcoin.ninja.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 2, orig_ttl: 604800,
+			expiration: 1708917507, inception: 1707702507, key_tag: 63175, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("h969M0tQu+hRyxhJi5aXroNIiyy2BbKpryAoMxZonuYC+orG6R5rIDE1EUzrp7rTZBKnykgHqkSF1klUK/OMyQ==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &matcorallo_ds, dnskeys.iter().collect()).unwrap();
-		let rrs = vec![matcorallo_ds.pop().unwrap().into(), ds_rrsig.into(),
+		verify_dnskey_rrsig(&dnskey_rrsig, &bitcoin_ninja_ds, dnskeys.iter().collect()).unwrap();
+		let rrs = vec![bitcoin_ninja_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
 		(dnskeys, rrs)
 	}
 
-	fn matcorallo_txt_record() -> (Txt, RRSig) {
+	fn bitcoin_ninja_txt_record() -> (Txt, RRSig) {
 		let txt_resp = Txt {
-			name: "txt_test.matcorallo.com.".try_into().unwrap(),
+			name: "txt_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "dnssec_prover_test".to_owned().into_bytes(),
 		};
 		let txt_rrsig = RRSig {
-			name: "txt_test.matcorallo.com.".try_into().unwrap(),
-			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708319203,
-			inception: 1707104203, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("4vaE5Jex2VvIT39JpuMNT7Ds7O0OfzTik5f8WcRRxO0IJnGAO16syAsNUkNkNqsMYknnjHDF0lI4agszgzdpsw==").unwrap(),
+			name: "txt_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("CTAs/BSUfZP6+L0MRBVigK03q3M/2APkWlI9gJFkcwFKtDG53c9vcqSqLvv/IMIulDb3pNIj5UpxoRYNAJcVkA==").unwrap(),
 		};
 		(txt_resp, txt_rrsig)
 	}
 
-	fn matcorallo_cname_record() -> (CName, RRSig) {
+	fn bitcoin_ninja_cname_record() -> (CName, RRSig) {
 		let cname_resp = CName {
-			name: "cname_test.matcorallo.com.".try_into().unwrap(),
-			canonical_name: "txt_test.matcorallo.com.".try_into().unwrap(),
+			name: "cname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			canonical_name: "txt_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 		};
 		let cname_rrsig = RRSig {
-			name: "cname_test.matcorallo.com.".try_into().unwrap(),
-			ty: CName::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708319203,
-			inception: 1707104203, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("5HIrmEotbVb95umE6SX3NrPboKsthdcY8b7DdaYQZzm0Nj5m2VgcfOmEPJYS8o1xE4GvGGF4sdfSy3Uw7TibBg==").unwrap(),
+			name: "cname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: CName::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("/xlq2qPB/BaXrUgpz66iIIVh6u2Qsg5oTE8LbDr01D6uvufVJZOl4qvSwbMpYw/+8Lv26etrT1xP53bc/7OyoA==").unwrap(),
 		};
 		(cname_resp, cname_rrsig)
 	}
 
-	fn matcorallo_wildcard_record() -> (Txt, RRSig) {
+	fn bitcoin_ninja_wildcard_record() -> (Txt, RRSig) {
 		let txt_resp = Txt {
-			name: "test.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			name: "test.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "wildcard_test".to_owned().into_bytes(),
 		};
 		let txt_rrsig = RRSig {
-			name: "test.wildcard_test.matcorallo.com.".try_into().unwrap(),
-			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708321778,
-			inception: 1707106778, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("vdnXunPY4CnbW/BL8VOOR9o33+dqyKA/4h+u5VM7NjB30Shp8L8gL5UwE0k7TKRNgHC8j3TqEPEmNMIHz87Z4Q==").unwrap(),
+			name: "test.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("GznihIpcboZZXG2wf/yyq1TVcNAl9iHiQeI7H6v15VzZFYhzljWFLolZPB86lKGywYC7PRH4OL0wNvrknJpp/g==").unwrap(),
 		};
 		(txt_resp, txt_rrsig)
 	}
 
-	fn matcorallo_cname_wildcard_record() -> (CName, RRSig, Txt, RRSig) {
+	fn bitcoin_ninja_cname_wildcard_record() -> (CName, RRSig, Txt, RRSig) {
 		let cname_resp = CName {
-			name: "test.cname_wildcard_test.matcorallo.com.".try_into().unwrap(),
-			canonical_name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			name: "test.cname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			canonical_name: "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 		};
 		let txt_resp = Txt {
-			name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
+			name: "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "wildcard_test".to_owned().into_bytes(),
 		};
 		let cname_rrsig = RRSig {
-			name: "test.cname_wildcard_test.matcorallo.com.".try_into().unwrap(),
-			ty: CName::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708322050,
-			inception: 1707107050, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("JfJuSemF5dtQYxEw6eKL4IRP8BaDt6FtbtdpZ6HjODTDflhKQRhBEbwT7kwceKPAq18q5sWHFV1bMTqE/F3WLw==").unwrap(),
+			name: "test.cname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: CName::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("PrII3i0K7H8RKoAmBSgSrPSmrNVNDmEf/d2h//zIKW0LE4gtt85mXP8pwEl8Ar5CbObAsWgmGI16/MMgQtqVZA==").unwrap(),
 		};
 		let txt_rrsig = RRSig {
-			name: "cname.wildcard_test.matcorallo.com.".try_into().unwrap(),
-			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708321778,
-			inception: 1707106778, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("vdnXunPY4CnbW/BL8VOOR9o33+dqyKA/4h+u5VM7NjB30Shp8L8gL5UwE0k7TKRNgHC8j3TqEPEmNMIHz87Z4Q==").unwrap(),
+			name: "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("GznihIpcboZZXG2wf/yyq1TVcNAl9iHiQeI7H6v15VzZFYhzljWFLolZPB86lKGywYC7PRH4OL0wNvrknJpp/g==").unwrap(),
 		};
 		(cname_resp, cname_rrsig, txt_resp, txt_rrsig)
 	}
 
-	fn matcorallo_txt_sort_edge_cases_records() -> (Vec<Txt>, RRSig) {
+	fn bitcoin_ninja_txt_sort_edge_cases_records() -> (Vec<Txt>, RRSig) {
 		let txts = vec![Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaa".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned().into_bytes(),
 		}, Txt {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba".to_owned().into_bytes(),
 		}];
 		let rrsig = RRSig {
-			name: "txt_sort_order.matcorallo.com.".try_into().unwrap(),
-			ty: Txt::TYPE, alg: 13, labels: 3, orig_ttl: 30, expiration: 1708449632,
-			inception: 1707234632, key_tag: 34530, key_name: "matcorallo.com.".try_into().unwrap(),
-			signature: base64::decode("elAhELwzkGpUMvzeiYZpg1+yRFPjmOeEd1ir1vYx2Dku9kzsXmAlejOYDPWdaJ6ekvHdMejCN/MtyI+iFAYqsw==").unwrap(),
+			name: "txt_sort_order.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1708920243,
+			inception: 1707705243, key_tag: 37639, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("C6myk1EJZ6/y4wClGp201y5EsqrAg4W/oybJ1/P0ss7sYraJC6BNApvHKEHpSBGgF1eJ/NCtpVFeD7+xgU0t3Q==").unwrap(),
 		};
 		(txts, rrsig)
 	}
@@ -664,23 +698,23 @@ mod tests {
 			assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
-		assert_eq!(verified_rrs.valid_from, 1707063650); // The TXT record RRSig was created last
-		assert_eq!(verified_rrs.expires, 1707631252); // The mattcorallo.com DS RRSig expires first
+		assert_eq!(verified_rrs.valid_from, 1707667200); // The com. DS RRSig was created last
+		assert_eq!(verified_rrs.expires, 1707976967); // The mattcorallo.com DS RRSig expires first
 		assert_eq!(verified_rrs.max_cache_ttl, 3600); // The TXT record had the shortest TTL
 	}
 
 	#[test]
 	fn check_txt_record_b() {
-		let dnskeys = matcorallo_dnskey().0;
-		let (txt, txt_rrsig) = matcorallo_txt_record();
+		let dnskeys = bitcoin_ninja_dnskey().0;
+		let (txt, txt_rrsig) = bitcoin_ninja_txt_record();
 		let txt_resp = [txt];
 		verify_rrsig(&txt_rrsig, &dnskeys, txt_resp.iter().collect()).unwrap();
 	}
 
 	#[test]
 	fn check_cname_record() {
-		let dnskeys = matcorallo_dnskey().0;
-		let (cname, cname_rrsig) = matcorallo_cname_record();
+		let dnskeys = bitcoin_ninja_dnskey().0;
+		let (cname, cname_rrsig) = bitcoin_ninja_cname_record();
 		let cname_resp = [cname];
 		verify_rrsig(&cname_rrsig, &dnskeys, cname_resp.iter().collect()).unwrap();
 	}
@@ -690,13 +724,14 @@ mod tests {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		for rr in mattcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
 		let (txt, txt_rrsig) = mattcorallo_txt_record();
 		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
-		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		let (txt, txt_rrsig) = matcorallo_txt_record();
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (txt, txt_rrsig) = bitcoin_ninja_txt_record();
 		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
-		let (cname, cname_rrsig) = matcorallo_cname_record();
+		let (cname, cname_rrsig) = bitcoin_ninja_cname_record();
 		for rr in [RR::CName(cname), RR::RRSig(cname_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
 
 		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
@@ -709,27 +744,27 @@ mod tests {
 			assert_eq!(txt.data, b"bitcoin:?b12=lno1qsgqmqvgm96frzdg8m0gc6nzeqffvzsqzrxqy32afmr3jn9ggkwg3egfwch2hy0l6jut6vfd8vpsc3h89l6u3dm4q2d6nuamav3w27xvdmv3lpgklhg7l5teypqz9l53hj7zvuaenh34xqsz2sa967yzqkylfu9xtcd5ymcmfp32h083e805y7jfd236w9afhavqqvl8uyma7x77yun4ehe9pnhu2gekjguexmxpqjcr2j822xr7q34p078gzslf9wpwz5y57alxu99s0z2ql0kfqvwhzycqq45ehh58xnfpuek80hw6spvwrvttjrrq9pphh0dpydh06qqspp5uq4gpyt6n9mwexde44qv7lstzzq60nr40ff38u27un6y53aypmx0p4qruk2tf9mjwqlhxak4znvna5y");
 		} else { panic!(); }
 		if let RR::Txt(txt) = &verified_rrs.verified_rrs[1] {
-			assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "txt_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
 		if let RR::CName(cname) = &verified_rrs.verified_rrs[2] {
-			assert_eq!(cname.name.as_str(), "cname_test.matcorallo.com.");
-			assert_eq!(cname.canonical_name.as_str(), "txt_test.matcorallo.com.");
+			assert_eq!(cname.name.as_str(), "cname_test.dnssec_proof_tests.bitcoin.ninja.");
+			assert_eq!(cname.canonical_name.as_str(), "txt_test.dnssec_proof_tests.bitcoin.ninja.");
 		} else { panic!(); }
 
 		let filtered_rrs =
-			verified_rrs.resolve_name(&"cname_test.matcorallo.com.".try_into().unwrap());
+			verified_rrs.resolve_name(&"cname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap());
 		assert_eq!(filtered_rrs.len(), 1);
 		if let RR::Txt(txt) = &filtered_rrs[0] {
-			assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "txt_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data, b"dnssec_prover_test");
 		} else { panic!(); }
 	}
 
 	#[test]
 	fn check_wildcard_record() {
-		let dnskeys = matcorallo_dnskey().0;
-		let (txt, txt_rrsig) = matcorallo_wildcard_record();
+		let dnskeys = bitcoin_ninja_dnskey().0;
+		let (txt, txt_rrsig) = bitcoin_ninja_wildcard_record();
 		let txt_resp = [txt];
 		verify_rrsig(&txt_rrsig, &dnskeys, txt_resp.iter().collect()).unwrap();
 	}
@@ -738,9 +773,9 @@ mod tests {
 	fn check_wildcard_proof() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		let (cname, cname_rrsig, txt, txt_rrsig) = matcorallo_cname_wildcard_record();
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (cname, cname_rrsig, txt, txt_rrsig) = bitcoin_ninja_cname_wildcard_record();
 		for rr in [RR::CName(cname), RR::RRSig(cname_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
 		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
 
@@ -750,19 +785,19 @@ mod tests {
 		verified_rrs.verified_rrs.sort();
 		assert_eq!(verified_rrs.verified_rrs.len(), 2);
 		if let RR::Txt(txt) = &verified_rrs.verified_rrs[0] {
-			assert_eq!(txt.name.as_str(), "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data, b"wildcard_test");
 		} else { panic!(); }
 		if let RR::CName(cname) = &verified_rrs.verified_rrs[1] {
-			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.matcorallo.com.");
-			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(cname.name.as_str(), "test.cname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.");
+			assert_eq!(cname.canonical_name.as_str(), "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.");
 		} else { panic!(); }
 
 		let filtered_rrs =
-			verified_rrs.resolve_name(&"test.cname_wildcard_test.matcorallo.com.".try_into().unwrap());
+			verified_rrs.resolve_name(&"test.cname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap());
 		assert_eq!(filtered_rrs.len(), 1);
 		if let RR::Txt(txt) = &filtered_rrs[0] {
-			assert_eq!(txt.name.as_str(), "cname.wildcard_test.matcorallo.com.");
+			assert_eq!(txt.name.as_str(), "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data, b"wildcard_test");
 		} else { panic!(); }
 	}
@@ -771,9 +806,9 @@ mod tests {
 	fn check_txt_sort_order() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		for rr in matcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
-		let (mut txts, rrsig) = matcorallo_txt_sort_edge_cases_records();
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (mut txts, rrsig) = bitcoin_ninja_txt_sort_edge_cases_records();
 		write_rr(&rrsig, 1, &mut rr_stream);
 		for txt in txts.iter() { write_rr(txt, 1, &mut rr_stream); }
 

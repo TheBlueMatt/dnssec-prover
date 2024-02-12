@@ -486,7 +486,7 @@ mod tests {
 	fn test_cname_query() {
 		for resolver in ["1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"] {
 			let sockaddr = resolver.to_socket_addrs().unwrap().next().unwrap();
-			let query_name = "cname_test.matcorallo.com.".try_into().unwrap();
+			let query_name = "cname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap();
 			let (proof, _) = build_txt_proof(sockaddr, &query_name).unwrap();
 
 			let mut rrs = parse_rr_stream(&proof).unwrap();
@@ -501,7 +501,7 @@ mod tests {
 			let resolved_rrs = verified_rrs.resolve_name(&query_name);
 			assert_eq!(resolved_rrs.len(), 1);
 			if let RR::Txt(txt) = &resolved_rrs[0] {
-				assert_eq!(txt.name.as_str(), "txt_test.matcorallo.com.");
+				assert_eq!(txt.name.as_str(), "txt_test.dnssec_proof_tests.bitcoin.ninja.");
 				assert_eq!(txt.data, b"dnssec_prover_test");
 			} else { panic!(); }
 		}
@@ -532,7 +532,7 @@ mod tests {
 	async fn test_cross_domain_cname_query_async() {
 		for resolver in ["1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"] {
 			let sockaddr = resolver.to_socket_addrs().unwrap().next().unwrap();
-			let query_name = "wildcard.x_domain_cname_wild.matcorallo.com.".try_into().unwrap();
+			let query_name = "wildcard.x_domain_cname_wild.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap();
 			let (proof, _) = build_txt_proof_async(sockaddr, &query_name).await.unwrap();
 
 			let mut rrs = parse_rr_stream(&proof).unwrap();
