@@ -34,7 +34,8 @@ pub struct QueryBuf {
 	len: u16,
 }
 impl QueryBuf {
-	fn new_zeroed(len: u16) -> Self {
+	/// Generates a new buffer of the given length, consisting of all zeros.
+	pub fn new_zeroed(len: u16) -> Self {
 		let heap_buf = if len > STACK_BUF_LIMIT { vec![0; len as usize] } else { Vec::new() };
 		Self {
 			buf: [0; STACK_BUF_LIMIT as usize],
@@ -42,7 +43,11 @@ impl QueryBuf {
 			len
 		}
 	}
-	pub(crate) fn extend_from_slice(&mut self, sl: &[u8]) {
+	/// Extends the size of this buffer by appending the given slice.
+	///
+	/// If the total length of this buffer exceeds [`u16::MAX`] after appending, the buffer's state
+	/// is undefined, however pushing data beyond [`u16::MAX`] will not panic.
+	pub fn extend_from_slice(&mut self, sl: &[u8]) {
 		let new_len = self.len.saturating_add(sl.len() as u16);
 		let was_heap = self.len > STACK_BUF_LIMIT;
 		let is_heap = new_len > STACK_BUF_LIMIT;
@@ -58,6 +63,14 @@ impl QueryBuf {
 		};
 		target.copy_from_slice(sl);
 		self.len = new_len;
+	}
+	/// Converts this query into its bytes on the heap
+	pub fn into_vec(self) -> Vec<u8> {
+		if self.len > STACK_BUF_LIMIT {
+			self.heap_buf
+		} else {
+			self.buf[..self.len as usize].to_vec()
+		}
 	}
 }
 impl ops::Deref for QueryBuf {
