@@ -157,7 +157,7 @@ impl RR {
 			RR::NSec3(_) => NSec3::TYPE,
 		}
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		match self {
 			RR::A(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::AAAA(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
@@ -209,9 +209,25 @@ pub(crate) trait StaticRecord : Ord + Sized {
 	const TYPE: u16;
 	fn name(&self) -> &Name;
 	fn json(&self) -> String;
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>);
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W);
 	fn read_from_data(name: Name, data: &[u8], wire_packet: &[u8]) -> Result<Self, ()>;
 }
+
+/// A record that can be written to a generic [`Writer`]
+pub(crate) trait WriteableRecord : Record {
+	fn serialize_u16_len_prefixed<W: Writer>(&self, out: &mut W);
+}
+impl<RR: StaticRecord> WriteableRecord for RR {
+	fn serialize_u16_len_prefixed<W: Writer>(&self, out: &mut W) {
+		RR::write_u16_len_prefixed_data(self, out)
+	}
+}
+impl WriteableRecord for RR {
+	fn serialize_u16_len_prefixed<W: Writer>(&self, out: &mut W) {
+		RR::write_u16_len_prefixed_data(self, out)
+	}
+}
+
 /// A trait describing a resource record (including the [`RR`] enum).
 pub trait Record : Ord {
 	/// The resource record type, as maintained by IANA.
@@ -295,18 +311,18 @@ impl StaticRecord for Txt {
 		debug_assert!(data.is_empty());
 		Ok(Txt { name, data: parsed_data })
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = (self.data.len() + (self.data.len() + 254) / 255) as u16;
-		out.extend_from_slice(&len.to_be_bytes());
+		out.write(&len.to_be_bytes());
 
 		let mut data_write = &self.data[..];
-		out.extend_from_slice(&[data_write.len().try_into().unwrap_or(255)]);
+		out.write(&[data_write.len().try_into().unwrap_or(255)]);
 		while !data_write.is_empty() {
 			let split_pos = core::cmp::min(255, data_write.len());
-			out.extend_from_slice(&data_write[..split_pos]);
+			out.write(&data_write[..split_pos]);
 			data_write = &data_write[split_pos..];
 			if !data_write.is_empty() {
-				out.extend_from_slice(&[data_write.len().try_into().unwrap_or(255)]);
+				out.write(&[data_write.len().try_into().unwrap_or(255)]);
 			}
 		}
 	}
@@ -355,11 +371,11 @@ impl StaticRecord for TLSA {
 			data_ty: read_u8(&mut data)?, data: data.to_vec(),
 		})
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 3 + self.data.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&[self.cert_usage, self.selector, self.data_ty]);
-		out.extend_from_slice(&self.data);
+		out.write(&(len as u16).to_be_bytes());
+		out.write(&[self.cert_usage, self.selector, self.data_ty]);
+		out.write(&self.data);
 	}
 }
 
@@ -385,9 +401,9 @@ impl StaticRecord for CName {
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len: u16 = name_len(&self.canonical_name);
-		out.extend_from_slice(&len.to_be_bytes());
+		out.write(&len.to_be_bytes());
 		write_name(out, &self.canonical_name);
 	}
 }
@@ -416,9 +432,9 @@ impl StaticRecord for DName {
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len: u16 = name_len(&self.delegation_name);
-		out.extend_from_slice(&len.to_be_bytes());
+		out.write(&len.to_be_bytes());
 		write_name(out, &self.delegation_name);
 	}
 }
@@ -460,13 +476,13 @@ impl StaticRecord for DnsKey {
 			alg: read_u8(&mut data)?, pubkey: data.to_vec(),
 		})
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 2 + 1 + 1 + self.pubkey.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&self.flags.to_be_bytes());
-		out.extend_from_slice(&self.protocol.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.pubkey);
+		out.write(&(len as u16).to_be_bytes());
+		out.write(&self.flags.to_be_bytes());
+		out.write(&self.protocol.to_be_bytes());
+		out.write(&self.alg.to_be_bytes());
+		out.write(&self.pubkey);
 	}
 }
 impl DnsKey {
@@ -531,13 +547,13 @@ impl StaticRecord for DS {
 			digest_type: read_u8(&mut data)?, digest: data.to_vec(),
 		})
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 2 + 1 + 1 + self.digest.len();
-		out.extend_from_slice(&(len as u16).to_be_bytes());
-		out.extend_from_slice(&self.key_tag.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.digest_type.to_be_bytes());
-		out.extend_from_slice(&self.digest);
+		out.write(&(len as u16).to_be_bytes());
+		out.write(&self.key_tag.to_be_bytes());
+		out.write(&self.alg.to_be_bytes());
+		out.write(&self.digest_type.to_be_bytes());
+		out.write(&self.digest);
 	}
 }
 
@@ -610,18 +626,18 @@ impl StaticRecord for RRSig {
 			signature: data.to_vec(),
 		})
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 2 + 1 + 1 + 4*3 + 2 + name_len(&self.key_name) + self.signature.len() as u16;
-		out.extend_from_slice(&len.to_be_bytes());
-		out.extend_from_slice(&self.ty.to_be_bytes());
-		out.extend_from_slice(&self.alg.to_be_bytes());
-		out.extend_from_slice(&self.labels.to_be_bytes());
-		out.extend_from_slice(&self.orig_ttl.to_be_bytes());
-		out.extend_from_slice(&self.expiration.to_be_bytes());
-		out.extend_from_slice(&self.inception.to_be_bytes());
-		out.extend_from_slice(&self.key_tag.to_be_bytes());
+		out.write(&len.to_be_bytes());
+		out.write(&self.ty.to_be_bytes());
+		out.write(&self.alg.to_be_bytes());
+		out.write(&self.labels.to_be_bytes());
+		out.write(&self.orig_ttl.to_be_bytes());
+		out.write(&self.expiration.to_be_bytes());
+		out.write(&self.inception.to_be_bytes());
+		out.write(&self.key_tag.to_be_bytes());
 		write_name(out, &self.key_name);
-		out.extend_from_slice(&self.signature);
+		out.write(&self.signature);
 	}
 }
 
@@ -708,9 +724,9 @@ impl StaticRecord for NSec {
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = name_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
-		out.extend_from_slice(&len.to_be_bytes());
+		out.write(&len.to_be_bytes());
 		write_name(out, &self.next_name);
 		write_nsec_types_bitmap(out, &self.types.0);
 	}
@@ -766,17 +782,17 @@ impl StaticRecord for NSec3 {
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 4 + 2 + self.salt.len() as u16 + self.next_name_hash.len() as u16 +
 			nsec_types_bitmap_len(&self.types.0);
-		out.extend_from_slice(&len.to_be_bytes());
-		out.extend_from_slice(&self.hash_algo.to_be_bytes());
-		out.extend_from_slice(&self.flags.to_be_bytes());
-		out.extend_from_slice(&self.hash_iterations.to_be_bytes());
-		out.extend_from_slice(&(self.salt.len() as u8).to_be_bytes());
-		out.extend_from_slice(&self.salt);
-		out.extend_from_slice(&(self.next_name_hash.len() as u8).to_be_bytes());
-		out.extend_from_slice(&self.next_name_hash);
+		out.write(&len.to_be_bytes());
+		out.write(&self.hash_algo.to_be_bytes());
+		out.write(&self.flags.to_be_bytes());
+		out.write(&self.hash_iterations.to_be_bytes());
+		out.write(&(self.salt.len() as u8).to_be_bytes());
+		out.write(&self.salt);
+		out.write(&(self.next_name_hash.len() as u8).to_be_bytes());
+		out.write(&self.next_name_hash);
 		write_nsec_types_bitmap(out, &self.types.0);
 	}
 }
@@ -803,9 +819,9 @@ impl StaticRecord for A {
 		address.copy_from_slice(&data);
 		Ok(A { name, address })
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		out.extend_from_slice(&4u16.to_be_bytes());
-		out.extend_from_slice(&self.address);
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
+		out.write(&4u16.to_be_bytes());
+		out.write(&self.address);
 	}
 }
 
@@ -831,9 +847,9 @@ impl StaticRecord for AAAA {
 		address.copy_from_slice(&data);
 		Ok(AAAA { name, address })
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		out.extend_from_slice(&16u16.to_be_bytes());
-		out.extend_from_slice(&self.address);
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
+		out.write(&16u16.to_be_bytes());
+		out.write(&self.address);
 	}
 }
 
@@ -861,8 +877,8 @@ impl StaticRecord for NS {
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
-	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
-		out.extend_from_slice(&name_len(&self.name_server).to_be_bytes());
+	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
+		out.write(&name_len(&self.name_server).to_be_bytes());
 		write_name(out, &self.name_server);
 	}
 }
