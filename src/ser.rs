@@ -109,7 +109,7 @@ pub(crate) trait Writer { fn write(&mut self, buf: &[u8]); }
 impl Writer for Vec<u8> { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
 impl Writer for QueryBuf { fn write(&mut self, buf: &[u8]) { self.extend_from_slice(buf); } }
 #[cfg(feature = "validation")]
-impl Writer for ring::digest::Context { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
+impl Writer for crate::crypto::hash::Hasher { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
 pub(crate) fn write_name<W: Writer>(out: &mut W, name: &str) {
 	let canonical_name = name.to_ascii_lowercase();
 	if canonical_name == "." {

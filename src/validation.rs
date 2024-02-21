@@ -7,6 +7,7 @@ use core::cmp;
 
 use ring::signature;
 
+use crate::crypto;
 use crate::rr::*;
 use crate::ser::write_name;
 
@@ -185,13 +186,12 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 		for ds in dses.clone() {
 			if ds.alg != dnskey.alg { continue; }
 			if dnskey.key_tag() == ds.key_tag {
-				let alg = match ds.digest_type {
-					1 if trust_sha1 => &ring::digest::SHA1_FOR_LEGACY_USE_ONLY,
-					2 => &ring::digest::SHA256,
-					4 => &ring::digest::SHA384,
+				let mut ctx = match ds.digest_type {
+					1 if trust_sha1 => crypto::hash::Hasher::sha1(),
+					2 => crypto::hash::Hasher::sha256(),
+					// TODO: 4 => crypto::hash::Hasher::sha384(),
 					_ => continue,
 				};
-				let mut ctx = ring::digest::Context::new(alg);
 				write_name(&mut ctx, &dnskey.name);
 				ctx.update(&dnskey.flags.to_be_bytes());
 				ctx.update(&dnskey.protocol.to_be_bytes());
