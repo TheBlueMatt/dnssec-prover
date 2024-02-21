@@ -45,7 +45,7 @@ pub enum ValidationError {
 	Invalid,
 }
 
-fn verify_rrsig<'a, RR: Record, Keys>(sig: &RRSig, dnskeys: Keys, mut records: Vec<&RR>)
+fn verify_rrsig<'a, RR: WriteableRecord, Keys>(sig: &RRSig, dnskeys: Keys, mut records: Vec<&RR>)
 -> Result<(), ValidationError>
 where Keys: IntoIterator<Item = &'a DnsKey> {
 	for record in records.iter() {
@@ -68,15 +68,14 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 				_ => return Err(ValidationError::UnsupportedAlgorithm),
 			};
 
-			let mut signed_data = Vec::with_capacity(2048);
-			signed_data.extend_from_slice(&sig.ty.to_be_bytes());
-			signed_data.extend_from_slice(&sig.alg.to_be_bytes());
-			signed_data.extend_from_slice(&sig.labels.to_be_bytes());
-			signed_data.extend_from_slice(&sig.orig_ttl.to_be_bytes());
-			signed_data.extend_from_slice(&sig.expiration.to_be_bytes());
-			signed_data.extend_from_slice(&sig.inception.to_be_bytes());
-			signed_data.extend_from_slice(&sig.key_tag.to_be_bytes());
-			write_name(&mut signed_data, &sig.key_name);
+			hash_ctx.update(&sig.ty.to_be_bytes());
+			hash_ctx.update(&sig.alg.to_be_bytes());
+			hash_ctx.update(&sig.labels.to_be_bytes());
+			hash_ctx.update(&sig.orig_ttl.to_be_bytes());
+			hash_ctx.update(&sig.expiration.to_be_bytes());
+			hash_ctx.update(&sig.inception.to_be_bytes());
+			hash_ctx.update(&sig.key_tag.to_be_bytes());
+			write_name(&mut hash_ctx, &sig.key_name);
 
 			records.sort_unstable();
 
@@ -92,19 +91,18 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 					let signed_name = record.name().trailing_n_labels(sig.labels);
 					debug_assert!(signed_name.is_some());
 					if let Some(name) = signed_name {
-						signed_data.extend_from_slice(b"\x01*");
-						write_name(&mut signed_data, name);
+						hash_ctx.update(b"\x01*");
+						write_name(&mut hash_ctx, name);
 					} else { return Err(ValidationError::Invalid); }
 				} else {
-					write_name(&mut signed_data, record.name());
+					write_name(&mut hash_ctx, record.name());
 				}
-				signed_data.extend_from_slice(&record.ty().to_be_bytes());
-				signed_data.extend_from_slice(&1u16.to_be_bytes()); // The INternet class
-				signed_data.extend_from_slice(&sig.orig_ttl.to_be_bytes());
-				record.write_u16_len_prefixed_data(&mut signed_data);
+				hash_ctx.update(&record.ty().to_be_bytes());
+				hash_ctx.update(&1u16.to_be_bytes()); // The INternet class
+				hash_ctx.update(&sig.orig_ttl.to_be_bytes());
+				record.serialize_u16_len_prefixed(&mut hash_ctx);
 			}
 
-			hash_ctx.update(&signed_data);
 			let hash = hash_ctx.finish();
 			let sig_validation = match sig.alg {
 				8|10 => crypto::rsa::validate_rsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
