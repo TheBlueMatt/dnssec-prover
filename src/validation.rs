@@ -3,10 +3,11 @@
 use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 use alloc::vec;
-use core::cmp;
+use core::cmp::{self, Ordering};
 
 use ring::signature;
 
+use crate::base32;
 use crate::crypto;
 use crate::rr::*;
 use crate::ser::write_name;
@@ -96,7 +97,11 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			for record in records.iter() {
 				let record_labels = record.name().labels() as usize;
 				let labels = sig.labels.into();
-				if record_labels != labels {
+				// For NSec types, the name should already match the wildcard, so we don't do any
+				// filtering here. This is relied upon in `verify_rr_stream` to check whether an
+				// NSec record is matching via wildcard (as otherwise we'd allow a resolver to
+				// change the name out from under us and change the wildcard to something else).
+				if record.ty() != NSec::TYPE && record_labels != labels {
 					if record_labels < labels { return Err(ValidationError::Invalid); }
 					let signed_name = record.name().trailing_n_labels(sig.labels);
 					debug_assert!(signed_name.is_some());
@@ -254,6 +259,53 @@ fn resolve_time(time: u32) -> u64 {
 	}
 }
 
+fn nsec_ord(a: &str, b: &str) -> Ordering {
+	let mut a_label_iter = a.rsplit(".");
+	let mut b_label_iter = b.rsplit(".");
+	loop {
+		match (a_label_iter.next(), b_label_iter.next()) {
+			(Some(_), None) => return Ordering::Greater,
+			(None, Some(_)) => return Ordering::Less,
+			(Some(a_label), Some(b_label)) => {
+				let mut a_bytes = a_label.bytes();
+				let mut b_bytes = b_label.bytes();
+				loop {
+					match (a_bytes.next(), b_bytes.next()) {
+						(Some(_), None) => return Ordering::Greater,
+						(None, Some(_)) => return Ordering::Less,
+						(Some(mut a), Some(mut b)) => {
+							if a >= 'A' as u8 && a <= 'Z' as u8 {
+								a += 'a' as u8 - 'A' as u8;
+							}
+							if b >= 'A' as u8 && b <= 'Z' as u8 {
+								b += 'a' as u8 - 'A' as u8;
+							}
+							if a != b { return a.cmp(&b); }
+						},
+						(None, None) => break,
+					}
+				}
+			},
+			(None, None) => return Ordering::Equal,
+		}
+	}
+}
+fn nsec_ord_extra<T, U>(a: &(&str, T, U), b: &(&str, T, U)) -> Ordering {
+	nsec_ord(a.0, b.0)
+}
+
+#[cfg(test)]
+#[test]
+fn rfc4034_sort_test() {
+	// Test nsec_ord based on RFC 4034 section 6.1's example
+	// Note that we replace the \200 example  with \7f as I have no idea what \200 is
+	let v = vec!["example.", "a.example.", "yljkjljk.a.example.", "Z.a.example.",
+		"zABC.a.EXAMPLE.", "z.example.", "\001.z.example.", "*.z.example.", "\x7f.z.example."];
+	let mut sorted = v.clone();
+	sorted.sort_unstable_by(|a, b| nsec_ord(*a, *b));
+	assert_eq!(sorted, v);
+}
+
 /// Verifies the given set of resource records.
 ///
 /// Given a set of arbitrary records, this attempts to validate DNSSEC data from the [`root_hints`]
@@ -267,6 +319,7 @@ fn resolve_time(time: u32) -> u64 {
 pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, ValidationError> {
 	let mut zone = ".";
 	let mut res = Vec::new();
+	let mut rrs_needing_non_existence_proofs = Vec::new();
 	let mut pending_ds_sets = Vec::with_capacity(1);
 	let mut latest_inception = 0;
 	let mut earliest_expiry = u64::MAX;
@@ -325,6 +378,22 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 							}
 						},
 						_ => {
+							if rrsig.labels != rrsig.name.labels() && rrsig.ty != NSec::TYPE {
+								if rrsig.ty == NSec3::TYPE {
+									// NSEC3 records should never appear on wildcards, so treat the
+									// whole proof as invalid
+									return Err(ValidationError::Invalid);
+								}
+								// If the RR used a wildcard, we need an NSEC/NSEC3 proof, which we
+								// check for at the end. Note that the proof should be for the
+								// "next closest" name, i.e. if the name here is a.b.c and it was
+								// signed as *.c, we want a proof for nothing being in b.c.
+								// Alternatively, if it was signed as *.b.c, we'd want a proof for
+								// a.b.c.
+								let proof_name = rrsig.name.trailing_n_labels(rrsig.labels + 1)
+									.ok_or(ValidationError::Invalid)?;
+								rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name, rrsig.ty));
+							}
 							for record in signed_records {
 								if !res.contains(&record) { res.push(record); }
 							}
@@ -349,14 +418,96 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 			return Err(ValidationError::Invalid);
 		}
 	}
-	if res.is_empty() { Err(ValidationError::Invalid) }
-	else if latest_inception >= earliest_expiry { Err(ValidationError::Invalid) }
-	else {
-		Ok(VerifiedRRStream {
-			verified_rrs: res, valid_from: latest_inception, expires: earliest_expiry,
-			max_cache_ttl: min_ttl,
-		})
+	if res.is_empty() { return Err(ValidationError::Invalid) }
+	if latest_inception >= earliest_expiry { return Err(ValidationError::Invalid) }
+
+	// First sort the proofs we're looking for so that the retains below avoid shifting.
+	rrs_needing_non_existence_proofs.sort_unstable_by(nsec_ord_extra);
+	'proof_search_loop: while let Some((name, zone, ty)) = rrs_needing_non_existence_proofs.pop() {
+		let nsec_search = res.iter()
+			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None })
+			.filter(|nsec| nsec.name.ends_with(zone.as_str()));
+		for nsec in nsec_search {
+			let name_matches = nsec.name.as_str() == name;
+			let name_contained = nsec_ord(&nsec.name,  &name) != Ordering::Greater &&
+				nsec_ord(&nsec.next_name, name) == Ordering::Greater;
+			if (name_matches && !nsec.types.contains_type(ty)) || name_contained {
+				rrs_needing_non_existence_proofs
+					.retain(|(n, _, t)| *n != name || (name_matches && nsec.types.contains_type(*t)));
+				continue 'proof_search_loop;
+			}
+		}
+		let nsec3_search = res.iter()
+			.filter_map(|rr| if let RR::NSec3(nsec3) = rr { Some(nsec3) } else { None })
+			.filter(|nsec3| nsec3.name.ends_with(zone.as_str()));
+
+		// Because we will only ever have two entries, a Vec is simpler than a map here.
+		let mut nsec3params_to_name_hash = Vec::new();
+		for nsec3 in nsec3_search.clone() {
+			if nsec3.hash_iterations > 2500 {
+				// RFC 5115 places different limits on the iterations based on the signature key
+				// length, but we just use 2500 for all key types
+				continue;
+			}
+			if nsec3.hash_algo != 1 { continue; }
+			if nsec3params_to_name_hash.iter()
+				.any(|(iterations, salt, _)| *iterations == nsec3.hash_iterations && *salt == &nsec3.salt)
+			{ continue; }
+
+			let mut hasher = crypto::hash::Hasher::sha1();
+			write_name(&mut hasher, &name);
+			hasher.update(&nsec3.salt);
+			for _ in 0..nsec3.hash_iterations {
+				let res = hasher.finish();
+				hasher = crypto::hash::Hasher::sha1();
+				hasher.update(res.as_ref());
+				hasher.update(&nsec3.salt);
+			}
+			nsec3params_to_name_hash.push((nsec3.hash_iterations, &nsec3.salt, hasher.finish()));
+
+			if nsec3params_to_name_hash.len() >= 2 {
+				// We only allow for up to two sets of hash_iterations/salt per zone. Beyond that
+				// we assume this is a malicious DoSing proof and give up.
+				break;
+			}
+		}
+		for nsec3 in nsec3_search {
+			if nsec3.flags != 0 {
+				// This is an opt-out NSEC3 (or has unknown flags set). Thus, we shouldn't rely on
+				// it as proof that some record doesn't exist.
+				continue;
+			}
+			if nsec3.hash_algo != 1 { continue; }
+			let name_hash = if let Some((_, _, hash)) =
+				nsec3params_to_name_hash.iter()
+				.find(|(iterations, salt, _)| *iterations == nsec3.hash_iterations && *salt == &nsec3.salt)
+			{
+				hash
+			} else { continue };
+
+			let (start_hash_base32, _) = nsec3.name.split_once(".")
+				.unwrap_or_else(|| { debug_assert!(false); ("", "")});
+			let start_hash = if let Ok(start_hash) = base32::decode(start_hash_base32) {
+				start_hash
+			} else { continue };
+			if start_hash.len() != 20 || nsec3.next_name_hash.len() != 20 { continue; }
+
+			let hash_matches = &start_hash[..] == name_hash.as_ref();
+			let hash_contained =
+				&start_hash[..] <= name_hash.as_ref() && &nsec3.next_name_hash[..] > name_hash.as_ref();
+			if (hash_matches && !nsec3.types.contains_type(ty)) || hash_contained {
+				rrs_needing_non_existence_proofs
+					.retain(|(n, _, t)| *n != name || (hash_matches && nsec3.types.contains_type(*t)));
+				continue 'proof_search_loop;
+			}
+		}
+		return Err(ValidationError::Invalid);
 	}
+
+	Ok(VerifiedRRStream {
+		verified_rrs: res, valid_from: latest_inception, expires: earliest_expiry,
+		max_cache_ttl: min_ttl,
+	})
 }
 
 impl<'a> VerifiedRRStream<'a> {
