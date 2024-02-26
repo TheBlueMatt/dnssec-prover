@@ -161,6 +161,23 @@ impl RR {
 			RR::RRSig(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 		}
 	}
+	fn ty_to_rr_name(ty: u16) -> Option<&'static str> {
+		match ty {
+			A::TYPE => Some("A"),
+			AAAA::TYPE => Some("AAAA"),
+			NS::TYPE => Some("NS"),
+			Txt::TYPE => Some("TXT"),
+			CName::TYPE => Some("CNAME"),
+			DName::TYPE => Some("DNAME"),
+			TLSA::TYPE => Some("TLSA"),
+			DnsKey::TYPE => Some("DNSKEY"),
+			DS::TYPE => Some("DS"),
+			RRSig::TYPE => Some("RRSIG"),
+			NSec::TYPE => Some("NSEC"),
+			NSec3::TYPE => Some("NSEC3"),
+			_ => None,
+		}
+	}
 }
 impl From<A> for RR { fn from(a: A) -> RR { RR::A(a) } }
 impl From<AAAA> for RR { fn from(aaaa: AAAA) -> RR { RR::AAAA(aaaa) } }
