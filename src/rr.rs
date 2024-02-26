@@ -65,7 +65,7 @@ impl TryFrom<String> for Name {
 			if label.len() > 63 { return Err(()); }
 		}
 
-		Ok(Name(s))
+		Ok(Name(s.to_ascii_lowercase()))
 	}
 }
 impl TryFrom<&str> for Name {
