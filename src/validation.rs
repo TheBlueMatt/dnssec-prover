@@ -93,11 +93,11 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			records.sort_unstable();
 
 			for record in records.iter() {
-				let periods = record.name().as_str().chars().filter(|c| *c == '.').count();
+				let record_labels = record.name().labels() as usize;
 				let labels = sig.labels.into();
-				if periods != 1 && periods != labels {
-					if periods < labels { return Err(ValidationError::Invalid); }
-					let signed_name = record.name().as_str().splitn(periods - labels + 1, ".").last();
+				if record_labels != labels {
+					if record_labels < labels { return Err(ValidationError::Invalid); }
+					let signed_name = record.name().trailing_n_labels(sig.labels);
 					debug_assert!(signed_name.is_some());
 					if let Some(name) = signed_name {
 						signed_data.extend_from_slice(b"\x01*");

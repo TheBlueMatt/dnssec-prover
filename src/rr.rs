@@ -23,6 +23,27 @@ pub struct Name(String);
 impl Name {
 	/// Gets the underlying human-readable domain name
 	pub fn as_str(&self) -> &str { &self.0 }
+	/// Gets the number of labels in this name
+	pub fn labels(&self) -> u8 {
+		if self.as_str() == "." {
+			0
+		} else {
+			self.as_str().chars().filter(|c| *c == '.').count() as u8
+		}
+	}
+	/// Gets a string containing the last `n` labels in this [`Name`] (which is also a valid name).
+	pub fn trailing_n_labels(&self, n: u8) -> Option<&str> {
+		let labels = self.labels();
+		if n > labels {
+			None
+		} else if n == labels {
+			Some(self.as_str())
+		} else if n == 0 {
+			Some(".")
+		} else {
+			self.as_str().splitn(labels as usize - n as usize + 1, ".").last()
+		}
+	}
 }
 impl core::ops::Deref for Name {
 	type Target = str;
