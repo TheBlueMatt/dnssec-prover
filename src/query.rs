@@ -138,7 +138,7 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>, rrsig_key_names: &mut Vec<N
 	if questions != 1 { return Err(()); }
 	let answers = read_u16(&mut read)?;
 	if answers == 0 { return Err(()); }
-	let _authorities = read_u16(&mut read)?;
+	let authorities = read_u16(&mut read)?;
 	let _additional = read_u16(&mut read)?;
 
 	for _ in 0..questions {
@@ -147,7 +147,7 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>, rrsig_key_names: &mut Vec<N
 		read_u16(&mut read)?; // class
 	}
 
-	// Only read the answers (skip authorities and additional) as that's all we care about.
+	// Only read the answers and NSEC records in authorities, skipping additional entirely.
 	let mut min_ttl = u32::MAX;
 	for _ in 0..answers {
 		let (rr, ttl) = parse_wire_packet_rr(&mut read, &resp)?;
@@ -155,6 +155,25 @@ fn handle_response(resp: &[u8], proof: &mut Vec<u8>, rrsig_key_names: &mut Vec<N
 		min_ttl = cmp::min(min_ttl, ttl);
 		if let RR::RRSig(rrsig) = rr { rrsig_key_names.push(rrsig.key_name); }
 	}
+
+	for _ in 0..authorities {
+		// Only include records from the authority section if they are NSEC/3 (or signatures
+		// thereover). We don't care about NS records here.
+		let (rr, ttl) = parse_wire_packet_rr(&mut read, &resp)?;
+		match &rr {
+			RR::RRSig(rrsig) => {
+				if rrsig.ty != NSec::TYPE && rrsig.ty != NSec3::TYPE {
+					continue;
+				}
+			},
+			RR::NSec(_)|RR::NSec3(_) => {},
+			_ => continue,
+		}
+		write_rr(&rr, ttl, proof);
+		min_ttl = cmp::min(min_ttl, ttl);
+		if let RR::RRSig(rrsig) = rr { rrsig_key_names.push(rrsig.key_name); }
+	}
+
 	Ok(min_ttl)
 }
 
@@ -538,7 +557,7 @@ mod tests {
 			let mut rrs = parse_rr_stream(&proof).unwrap();
 			rrs.shuffle(&mut rand::rngs::OsRng);
 			let verified_rrs = verify_rr_stream(&rrs).unwrap();
-			assert_eq!(verified_rrs.verified_rrs.len(), 2);
+			assert_eq!(verified_rrs.verified_rrs.len(), 3);
 
 			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 			assert!(verified_rrs.valid_from < now);
@@ -564,7 +583,7 @@ mod tests {
 			let mut rrs = parse_rr_stream(&proof).unwrap();
 			rrs.shuffle(&mut rand::rngs::OsRng);
 			let verified_rrs = verify_rr_stream(&rrs).unwrap();
-			assert_eq!(verified_rrs.verified_rrs.len(), 3);
+			assert_eq!(verified_rrs.verified_rrs.len(), 5);
 
 			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 			assert!(verified_rrs.valid_from < now);
