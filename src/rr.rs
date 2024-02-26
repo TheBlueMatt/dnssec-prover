@@ -261,6 +261,7 @@ impl StaticRecord for Txt {
 			parsed_data.extend_from_slice(&data[..len]);
 			data = &data[len..];
 		}
+		debug_assert!(data.is_empty());
 		Ok(Txt { name, data: parsed_data })
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
@@ -349,7 +350,9 @@ impl StaticRecord for CName {
 			self.name.0, self.canonical_name.0)
 	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
-		Ok(CName { name, canonical_name: read_wire_packet_name(&mut data, wire_packet)? })
+		let res = CName { name, canonical_name: read_wire_packet_name(&mut data, wire_packet)? };
+		debug_assert!(data.is_empty());
+		Ok(res)
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		let len: u16 = name_len(&self.canonical_name);
@@ -378,7 +381,9 @@ impl StaticRecord for DName {
 			self.name.0, self.delegation_name.0)
 	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
-		Ok(DName { name, delegation_name: read_wire_packet_name(&mut data, wire_packet)? })
+		let res = DName { name, delegation_name: read_wire_packet_name(&mut data, wire_packet)? };
+		debug_assert!(data.is_empty());
+		Ok(res)
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		let len: u16 = name_len(&self.delegation_name);
@@ -665,7 +670,9 @@ impl StaticRecord for NS {
 		format!("{{\"type\":\"ns\",\"name\":\"{}\",\"ns\":\"{}\"}}", self.name.0, self.name_server.0)
 	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
-		Ok(NS { name, name_server: read_wire_packet_name(&mut data, wire_packet)? })
+		let res = NS { name, name_server: read_wire_packet_name(&mut data, wire_packet)? };
+		debug_assert!(data.is_empty());
+		Ok(res)
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
 		out.extend_from_slice(&name_len(&self.name_server).to_be_bytes());
