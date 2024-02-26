@@ -26,6 +26,54 @@ pub(crate) fn read_u32(inp: &mut &[u8]) -> Result<u32, ()> {
 	Ok(u32::from_be_bytes(bytes))
 }
 
+pub(crate) fn read_u8_len_prefixed_bytes(inp: &mut &[u8]) -> Result<Vec<u8>, ()> {
+	let len = *inp.get(0).ok_or(())?;
+	*inp = &inp[1..];
+	if inp.len() < len.into() { return Err(()); }
+	let mut res = Vec::with_capacity(len.into());
+	res.extend_from_slice(&inp[..len.into()]);
+	*inp = &inp[len.into()..];
+	Ok(res)
+}
+
+pub(crate) fn write_nsec_types_bitmap<W: Writer>(out: &mut W, types: &[u8; 8192]) {
+	for (idx, flags) in types.chunks(32).enumerate() {
+		debug_assert_eq!(flags.len(), 32);
+		if flags != &[0; 32] {
+			let last_nonzero_idx = flags.iter().rposition(|flag| *flag != 0)
+				.unwrap_or_else(|| { debug_assert!(false); 0 });
+			out.write(&(idx as u8).to_be_bytes());
+			out.write(&(last_nonzero_idx as u8 + 1).to_be_bytes());
+			out.write(&flags[..last_nonzero_idx + 1]);
+		}
+	}
+}
+pub(crate) fn nsec_types_bitmap_len(types: &[u8; 8192]) -> u16 {
+	let mut total_len = 0;
+	for flags in types.chunks(32) {
+		debug_assert_eq!(flags.len(), 32);
+		if flags != &[0; 32] {
+			total_len += 3 + flags.iter().rposition(|flag| *flag != 0)
+				.unwrap_or_else(|| { debug_assert!(false); 0 }) as u16;
+		}
+	}
+	total_len
+}
+
+pub(crate) fn read_nsec_types_bitmap(inp: &mut &[u8]) -> Result<[u8; 8192], ()> {
+	let mut res = [0; 8192];
+	while !inp.is_empty() {
+		let block = *inp.get(0).ok_or(())?;
+		let len = *inp.get(1).ok_or(())?;
+		*inp = &inp[2..];
+		if inp.len() < len as usize { return Err(()); }
+		res[block as usize * 32..block as usize * 32 + len as usize]
+			.copy_from_slice(&inp[..len as usize]);
+		*inp = &inp[len as usize..];
+	}
+	Ok(res)
+}
+
 fn do_read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String, recursion_limit: usize) -> Result<(), ()> {
 	loop {
 		let len = read_u8(inp)? as usize;
@@ -107,6 +155,8 @@ pub(crate) fn parse_wire_packet_rr(inp: &mut &[u8], wire_packet: &[u8]) -> Resul
 		DnsKey::TYPE => RR::DnsKey(DnsKey::read_from_data(name, data, wire_packet)?),
 		DS::TYPE => RR::DS(DS::read_from_data(name, data, wire_packet)?),
 		RRSig::TYPE => RR::RRSig(RRSig::read_from_data(name, data, wire_packet)?),
+		NSec::TYPE => RR::NSec(NSec::read_from_data(name, data, wire_packet)?),
+		NSec3::TYPE => RR::NSec3(NSec3::read_from_data(name, data, wire_packet)?),
 		_ => return Err(()),
 	};
 	Ok((rr, ttl))

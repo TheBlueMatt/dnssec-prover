@@ -101,6 +101,10 @@ pub enum RR {
 	DS(DS),
 	/// A Resource Record Signature record
 	RRSig(RRSig),
+	/// A Next Secure Record record
+	NSec(NSec),
+	/// A Next Secure Record version 3 record
+	NSec3(NSec3),
 }
 impl RR {
 	/// Gets the name this record refers to.
@@ -116,6 +120,8 @@ impl RR {
 			RR::DnsKey(rr) => &rr.name,
 			RR::DS(rr) => &rr.name,
 			RR::RRSig(rr) => &rr.name,
+			RR::NSec(rr) => &rr.name,
+			RR::NSec3(rr) => &rr.name,
 		}
 	}
 	/// Gets a JSON encoding of this record
@@ -131,6 +137,8 @@ impl RR {
 			RR::DnsKey(rr) => StaticRecord::json(rr),
 			RR::DS(rr) => StaticRecord::json(rr),
 			RR::RRSig(rr) => StaticRecord::json(rr),
+			RR::NSec(rr) => StaticRecord::json(rr),
+			RR::NSec3(rr) => StaticRecord::json(rr),
 		}
 	}
 	fn ty(&self) -> u16 {
@@ -145,6 +153,8 @@ impl RR {
 			RR::DnsKey(_) => DnsKey::TYPE,
 			RR::DS(_) => DS::TYPE,
 			RR::RRSig(_) => RRSig::TYPE,
+			RR::NSec(_) => NSec::TYPE,
+			RR::NSec3(_) => NSec3::TYPE,
 		}
 	}
 	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
@@ -159,6 +169,8 @@ impl RR {
 			RR::DnsKey(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::DS(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 			RR::RRSig(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::NSec(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
+			RR::NSec3(rr) => StaticRecord::write_u16_len_prefixed_data(rr, out),
 		}
 	}
 	fn ty_to_rr_name(ty: u16) -> Option<&'static str> {
@@ -189,6 +201,8 @@ impl From<TLSA> for RR { fn from(tlsa: TLSA) -> RR { RR::TLSA(tlsa) } }
 impl From<DnsKey> for RR { fn from(dnskey: DnsKey) -> RR { RR::DnsKey(dnskey) } }
 impl From<DS> for RR { fn from(ds: DS) -> RR { RR::DS(ds) } }
 impl From<RRSig> for RR { fn from(rrsig: RRSig) -> RR { RR::RRSig(rrsig) } }
+impl From<NSec> for RR { fn from(nsec: NSec) -> RR { RR::NSec(nsec) } }
+impl From<NSec3> for RR { fn from(nsec3: NSec3) -> RR { RR::NSec3(nsec3) } }
 
 pub(crate) trait StaticRecord : Ord + Sized {
 	// http://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4
@@ -608,6 +622,150 @@ impl StaticRecord for RRSig {
 		out.extend_from_slice(&self.key_tag.to_be_bytes());
 		write_name(out, &self.key_name);
 		out.extend_from_slice(&self.signature);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A mask used in [`NSec`] and [`NSec3`] records which indicates the resource record types which
+/// exist at the (hash of the) name described in [`Record::name`].
+pub struct NSecTypeMask([u8; 8192]);
+impl NSecTypeMask {
+	/// Constructs a new, empty, type mask.
+	pub fn new() -> Self { Self([0; 8192]) }
+	/// Checks if the given type (from [`Record::ty`]) is set, indicating a record of this type
+	/// exists.
+	pub fn contains_type(&self, ty: u16) -> bool {
+		let f = self.0[(ty >> 3) as usize];
+		// DNSSEC's bit fields are in wire order, so the high bit is type 0, etc.
+		f & (1 << (7 - (ty & 3))) != 0
+	}
+	fn write_json(&self, s: &mut String) {
+		*s += "[";
+		let mut have_written = false;
+		for (idx, mask) in self.0.iter().enumerate() {
+			if *mask == 0 { continue; }
+			for b in 0..8 {
+				if *mask & (1 << b) != 0 {
+					if have_written {
+						*s += ",";
+					}
+					have_written = true;
+					let ty = ((idx as u16) << 3) | (7 - b);
+					match RR::ty_to_rr_name(ty) {
+						Some(name) => write!(s, "\"{}\"", name).expect("Writes to a string shouldn't fail"),
+						_ => write!(s, "{}", ty).expect("Writes to a string shouldn't fail"),
+					}
+				}
+			}
+		}
+		*s += "]";
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A Next Secure Record resource record. This indicates a range of possible names for which there
+/// is no such record.
+pub struct NSec {
+	/// The name this record is at.
+	pub name: Name,
+	/// The next name which contains a record. There are no names between `name` and
+	/// [`Self::next_name`].
+	pub next_name: Name,
+	/// The set of record types which exist at `name`. Any other record types do not exist at
+	/// `name`.
+	pub types: NSecTypeMask,
+}
+impl StaticRecord for NSec {
+	const TYPE: u16 = 47;
+	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(256 + self.next_name.len());
+		write!(&mut out,
+			"{{\"type\":\"nsec\",\"name\":\"{}\",\"next_name\":\"{}\",\"types\":",
+			self.name.0, self.next_name.0,
+		).expect("Write to a String shouldn't fail");
+		self.types.write_json(&mut out);
+		out += "}";
+		out
+	}
+	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
+		let res = NSec {
+			name, next_name: read_wire_packet_name(&mut data, wire_packet)?,
+			types: NSecTypeMask(read_nsec_types_bitmap(&mut data)?),
+		};
+		debug_assert!(data.is_empty());
+		Ok(res)
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		let len = name_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
+		out.extend_from_slice(&len.to_be_bytes());
+		write_name(out, &self.next_name);
+		write_nsec_types_bitmap(out, &self.types.0);
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A Next Secure Record resource record. This indicates a range of possible names for which there
+/// is no such record.
+pub struct NSec3 {
+	/// The name this record is at.
+	pub name: Name,
+	/// The hash algorithm used to hash the `name` and [`Self::next_name_hash`]. Currently only 1
+	/// (SHA-1) is defined.
+	pub hash_algo: u8,
+	/// Flags for this record. Currently only bit 0 (the "opt-out" bit) is defined.
+	pub flags: u8,
+	/// The number of hash iterations required.
+	///
+	/// As of RFC 9276 this MUST be set to 0, but sadly is often still set higher in the wild. A
+	/// hard cap is applied in validation.
+	pub hash_iterations: u16,
+	/// The salt included in the hash.
+	///
+	/// As of RFC 9276 this SHOULD be empty, but often isn't in the wild.
+	pub salt: Vec<u8>,
+	/// The hash of the next name which contains a record. There are no records who's name's hash
+	/// lies between `name` and [`Self::next_name_hash`].
+	pub next_name_hash: Vec<u8>,
+	/// The set of record types which exist at `name`. Any other record types do not exist at
+	/// `name`.
+	pub types: NSecTypeMask,
+}
+impl StaticRecord for NSec3 {
+	const TYPE: u16 = 50;
+	fn name(&self) -> &Name { &self.name }
+	fn json(&self) -> String {
+		let mut out = String::with_capacity(256);
+		write!(&mut out,
+			"{{\"type\":\"nsec3\",\"name\":\"{}\",\"hash_algo\":{},\"flags\":{},\"hash_iterations\":{},\"salt\":{:?},\"next_name_hash\":{:?},\"types\":",
+			self.name.0, self.hash_algo, self.flags, self.hash_iterations, &self.salt[..], &self.next_name_hash[..]
+		).expect("Write to a String shouldn't fail");
+		self.types.write_json(&mut out);
+		out += "}";
+		out
+	}
+	fn read_from_data(name: Name, mut data: &[u8], _wire_packet: &[u8]) -> Result<Self, ()> {
+		let res = NSec3 {
+			name, hash_algo: read_u8(&mut data)?, flags: read_u8(&mut data)?,
+			hash_iterations: read_u16(&mut data)?, salt: read_u8_len_prefixed_bytes(&mut data)?,
+			next_name_hash: read_u8_len_prefixed_bytes(&mut data)?,
+			types: NSecTypeMask(read_nsec_types_bitmap(&mut data)?),
+		};
+		debug_assert!(data.is_empty());
+		Ok(res)
+	}
+	fn write_u16_len_prefixed_data(&self, out: &mut Vec<u8>) {
+		let len = 4 + 2 + self.salt.len() as u16 + self.next_name_hash.len() as u16 +
+			nsec_types_bitmap_len(&self.types.0);
+		out.extend_from_slice(&len.to_be_bytes());
+		out.extend_from_slice(&self.hash_algo.to_be_bytes());
+		out.extend_from_slice(&self.flags.to_be_bytes());
+		out.extend_from_slice(&self.hash_iterations.to_be_bytes());
+		out.extend_from_slice(&(self.salt.len() as u8).to_be_bytes());
+		out.extend_from_slice(&self.salt);
+		out.extend_from_slice(&(self.next_name_hash.len() as u8).to_be_bytes());
+		out.extend_from_slice(&self.next_name_hash);
+		write_nsec_types_bitmap(out, &self.types.0);
 	}
 }
 
