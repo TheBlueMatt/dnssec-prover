@@ -9,6 +9,8 @@ pub mod ser;
 pub mod query;
 
 #[cfg(feature = "validation")]
+mod base32;
+#[cfg(feature = "validation")]
 mod crypto;
 #[cfg(feature = "validation")]
 pub mod validation;
