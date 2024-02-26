@@ -247,7 +247,7 @@ impl StaticRecord for Txt {
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		if let Ok(s) = core::str::from_utf8(&self.data) {
-			if s.chars().all(|c| !c.is_control() && c != '"') {
+			if s.chars().all(|c| !c.is_control() && c != '"' && c != '\\') {
 				return format!("{{\"type\":\"txt\",\"name\":\"{}\",\"contents\":\"{}\"}}", self.name.0, s);
 			}
 		}
