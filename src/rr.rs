@@ -632,12 +632,24 @@ pub struct NSecTypeMask([u8; 8192]);
 impl NSecTypeMask {
 	/// Constructs a new, empty, type mask.
 	pub fn new() -> Self { Self([0; 8192]) }
+	/// Builds a new type mask with the given types set
+	pub fn from_types(types: &[u16]) -> Self {
+		let mut flags = [0; 8192];
+		for t in types {
+			flags[*t as usize >> 3] |= 1 << (7 - (*t as usize % 8));
+		}
+		let res = Self(flags);
+		for t in types {
+			debug_assert!(res.contains_type(*t));
+		}
+		res
+	}
 	/// Checks if the given type (from [`Record::ty`]) is set, indicating a record of this type
 	/// exists.
 	pub fn contains_type(&self, ty: u16) -> bool {
 		let f = self.0[(ty >> 3) as usize];
 		// DNSSEC's bit fields are in wire order, so the high bit is type 0, etc.
-		f & (1 << (7 - (ty & 3))) != 0
+		f & (1 << (7 - (ty % 8))) != 0
 	}
 	fn write_json(&self, s: &mut String) {
 		*s += "[";
