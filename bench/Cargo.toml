@@ -1,0 +1,22 @@
+[package]
+name = "bench"
+version = "0.0.1"
+authors = ["Matt Corallo"]
+edition = "2021"
+
+[[bench]]
+name = "bench"
+harness = false
+
+[features]
+
+[dependencies]
+dnssec-prover = { path = "../", features = ["validation"] }
+criterion = { version = "0.4", default-features = false }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+panic = "abort"
+debug = true

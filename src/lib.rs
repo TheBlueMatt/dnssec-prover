@@ -44,9 +44,9 @@ extern crate alloc;
 #[cfg(feature = "validation")]
 mod base32;
 
-#[cfg(all(feature = "validation", fuzzing))]
+#[cfg(all(feature = "validation", any(fuzzing, dnssec_validate_bench)))]
 pub mod crypto;
-#[cfg(all(feature = "validation", not(fuzzing)))]
+#[cfg(all(feature = "validation", not(any(fuzzing, dnssec_validate_bench))))]
 mod crypto;
 
 pub mod rr;
