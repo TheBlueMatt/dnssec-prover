@@ -557,7 +557,7 @@ mod tests {
 			let mut rrs = parse_rr_stream(&proof).unwrap();
 			rrs.shuffle(&mut rand::rngs::OsRng);
 			let verified_rrs = verify_rr_stream(&rrs).unwrap();
-			assert_eq!(verified_rrs.verified_rrs.len(), 3);
+			assert_eq!(verified_rrs.verified_rrs.len(), 2);
 
 			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 			assert!(verified_rrs.valid_from < now);
@@ -583,7 +583,7 @@ mod tests {
 			let mut rrs = parse_rr_stream(&proof).unwrap();
 			rrs.shuffle(&mut rand::rngs::OsRng);
 			let verified_rrs = verify_rr_stream(&rrs).unwrap();
-			assert_eq!(verified_rrs.verified_rrs.len(), 5);
+			assert_eq!(verified_rrs.verified_rrs.len(), 3);
 
 			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 			assert!(verified_rrs.valid_from < now);

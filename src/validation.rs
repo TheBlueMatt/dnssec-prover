@@ -220,7 +220,8 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 /// contained records verified.
 #[derive(Debug, Clone)]
 pub struct VerifiedRRStream<'a> {
-	/// The set of verified [`RR`]s.
+	/// The set of verified [`RR`]s, not including [`DnsKey`], [`RRSig`], [`NSec`], and [`NSec3`]
+	/// records.
 	///
 	/// These are not valid unless the current UNIX time is between [`Self::valid_from`] and
 	/// [`Self::expires`].
@@ -503,6 +504,8 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 		}
 		return Err(ValidationError::Invalid);
 	}
+
+	res.retain(|rr| rr.ty() != NSec::TYPE && rr.ty() != NSec3::TYPE);
 
 	Ok(VerifiedRRStream {
 		verified_rrs: res, valid_from: latest_inception, expires: earliest_expiry,
@@ -1079,7 +1082,7 @@ mod tests {
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let mut verified_rrs = verify_rr_stream(&rrs).unwrap();
 		verified_rrs.verified_rrs.sort();
-		assert_eq!(verified_rrs.verified_rrs.len(), 5);
+		assert_eq!(verified_rrs.verified_rrs.len(), 2);
 		if let RR::Txt(txt) = &verified_rrs.verified_rrs[0] {
 			assert_eq!(txt.name.as_str(), "asdf.wildcard_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data, b"wildcard_test");
