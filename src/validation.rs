@@ -1102,6 +1102,81 @@ mod tests {
 	}
 
 	#[test]
+	fn check_simple_nsec_zone_proof() {
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_nsec_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (txt, txt_rrsig) = bitcoin_ninja_nsec_record();
+		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+		let filtered_rrs =
+			verified_rrs.resolve_name(&"a.nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap());
+		assert_eq!(filtered_rrs.len(), 1);
+		if let RR::Txt(txt) = &filtered_rrs[0] {
+			assert_eq!(txt.name.as_str(), "a.nsec_tests.dnssec_proof_tests.bitcoin.ninja.");
+			assert_eq!(txt.data, b"txt_a");
+		} else { panic!(); }
+	}
+
+	#[test]
+	fn check_nsec_wildcard_proof() {
+		let check_proof = |pfx: &str, post_override: bool| -> Result<(), ()> {
+			let mut rr_stream = Vec::new();
+			for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_nsec_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			let (txt, txt_rrsig, nsec, nsec_rrsig) = if post_override {
+				bitcoin_ninja_nsec_post_override_wildcard_record(pfx)
+			} else {
+				bitcoin_ninja_nsec_wildcard_record(pfx)
+			};
+			for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in [RR::NSec(nsec), RR::RRSig(nsec_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+			let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			// If the post_override flag is wrong (or the pfx is override), this will fail. No
+			// other calls in this lambda should fail.
+			let verified_rrs = verify_rr_stream(&rrs).map_err(|_| ())?;
+			let name: Name =
+				(pfx.to_owned() + ".wildcard_test.nsec_tests.dnssec_proof_tests.bitcoin.ninja.").try_into().unwrap();
+			let filtered_rrs = verified_rrs.resolve_name(&name);
+			assert_eq!(filtered_rrs.len(), 1);
+			if let RR::Txt(txt) = &filtered_rrs[0] {
+				assert_eq!(txt.name, name);
+				assert_eq!(txt.data, b"wildcard_test");
+			} else { panic!(); }
+			Ok(())
+		};
+		// Records up to override will only work with the pre-override NSEC, and afterwards with
+		// the post-override NSEC. The literal override will always fail.
+		check_proof("a", false).unwrap();
+		check_proof("a", true).unwrap_err();
+		check_proof("a.b", false).unwrap();
+		check_proof("a.b", true).unwrap_err();
+		check_proof("o", false).unwrap();
+		check_proof("o", true).unwrap_err();
+		check_proof("a.o", false).unwrap();
+		check_proof("a.o", true).unwrap_err();
+		check_proof("override", false).unwrap_err();
+		check_proof("override", true).unwrap_err();
+		// Subdomains of override are also overridden by the override TXT entry and cannot use the
+		// wildcard record.
+		check_proof("b.override", false).unwrap_err();
+		check_proof("b.override", true).unwrap_err();
+		check_proof("z", false).unwrap_err();
+		check_proof("z", true).unwrap_err();
+		check_proof("a.z", false).unwrap_err();
+		check_proof("a.z", true).unwrap_err();
+	}
+
+	#[test]
 	fn check_txt_sort_order() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
