@@ -26,6 +26,9 @@ bitcoin_hashes = { version = "0.13", default-features = false, optional = true }
 hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"], optional = true }
 tokio_crate = { package = "tokio", version = "1.0", default-features = false, optional = true }
 
+[target.'cfg(fuzzing)'.dependencies]
+ibig = { version = "0.3", optional = true }
+
 [dev-dependencies]
 hex-conservative = { version = "0.1", default-features = false, features = ["alloc"] }
 base64 = "0.21"

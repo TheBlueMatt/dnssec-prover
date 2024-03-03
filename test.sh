@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eox
+export RUSTC_BOOTSTRAP=1
 cargo test --no-default-features
 cargo test
 cargo test --no-default-features --features std

@@ -18,7 +18,7 @@ libfuzzer_fuzz = ["libfuzzer-sys"]
 stdin_fuzz = []
 
 [dependencies]
-dnssec-prover = { path = "../", features = ["validation", "std", "build_server"] }
+dnssec-prover = { path = "../", features = ["validation", "std", "build_server", "ibig"] }
 
 afl = { version = "0.12", optional = true }
 honggfuzz = { version = "0.5", optional = true, default-features = false }
@@ -52,3 +52,7 @@ path = "src/parse_stream_validate.rs"
 [[bin]]
 name = "fuzz_builder"
 path = "src/fuzz_builder.rs"
+
+[[bin]]
+name = "bigint_math"
+path = "src/bigint_math.rs"

@@ -19,4 +19,5 @@
 //! does what we need without any unnecessary dependencies and with a very conservative MSRV
 //! policy. Thus we go ahead and use that for our hashing needs.
 
+pub mod bigint;
 pub mod hash;

@@ -24,21 +24,34 @@
 //!  * Finally, the crate can be built as a binary using the `build_server` feature, responding to
 //!    queries over HTTP GET calls to `/dnssecproof?d=domain.name.&t=RecordType` with DNSSEC
 //!    proofs.
+//!
+//! Note that this library's MSRV is 1.64 for normal building, however builds fine on 1.63 (and
+//! possibly earlier) when `RUSTC_BOOTSTRAP=1` is set, as it relies on the
+//! `const_slice_from_raw_parts` feature.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::private_intra_doc_links)]
 
+// const_slice_from_raw_parts was stabilized in 1.64, however we support building on 1.63 as well.
+// Luckily, it seems to work fine in 1.63 with the feature flag (and RUSTC_BOOTSTRAP=1) enabled.
+#![allow(stable_features)]
+#![feature(const_slice_from_raw_parts)]
+
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
+
+#[cfg(feature = "validation")]
+mod base32;
+
+#[cfg(all(feature = "validation", fuzzing))]
+pub mod crypto;
+#[cfg(all(feature = "validation", not(fuzzing)))]
+mod crypto;
 
 pub mod rr;
 pub mod ser;
 pub mod query;
 
-#[cfg(feature = "validation")]
-mod base32;
-#[cfg(feature = "validation")]
-mod crypto;
 #[cfg(feature = "validation")]
 pub mod validation;
