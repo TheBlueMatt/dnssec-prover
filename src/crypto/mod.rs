@@ -21,3 +21,4 @@
 
 pub mod bigint;
 pub mod hash;
+pub mod rsa;

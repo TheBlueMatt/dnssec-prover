@@ -47,27 +47,6 @@ pub enum ValidationError {
 	Invalid,
 }
 
-pub(crate) fn bytes_to_rsa_pk<'a>(pubkey: &'a [u8])
--> Result<signature::RsaPublicKeyComponents<&'a [u8]>, ()> {
-	if pubkey.len() <= 3 { return Err(()); }
-
-	let mut pos = 0;
-	let exponent_length;
-	if pubkey[0] == 0 {
-		exponent_length = ((pubkey[1] as usize) << 8) | (pubkey[2] as usize);
-		pos += 3;
-	} else {
-		exponent_length = pubkey[0] as usize;
-		pos += 1;
-	}
-
-	if pubkey.len() <= pos + exponent_length { return Err(()); }
-	Ok(signature::RsaPublicKeyComponents {
-		n: &pubkey[pos + exponent_length..],
-		e: &pubkey[pos..pos + exponent_length]
-	})
-}
-
 fn verify_rrsig<'a, RR: Record, Keys>(sig: &RRSig, dnskeys: Keys, mut records: Vec<&RR>)
 -> Result<(), ValidationError>
 where Keys: IntoIterator<Item = &'a DnsKey> {
@@ -81,6 +60,15 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			// The ZONE flag must be set if we're going to validate RRs with this key.
 			if dnskey.flags & 0b1_0000_0000 == 0 { continue; }
 			if dnskey.alg != sig.alg { continue; }
+
+			let mut hash_ctx = match sig.alg {
+				8 => crypto::hash::Hasher::sha256(),
+				10 => crypto::hash::Hasher::sha512(),
+				13 => crypto::hash::Hasher::sha256(),
+				//TODO: 14 => crypto::hash::Hasher::sha384(),
+				15 => crypto::hash::Hasher::sha512(),
+				_ => return Err(ValidationError::UnsupportedAlgorithm),
+			};
 
 			let mut signed_data = Vec::with_capacity(2048);
 			signed_data.extend_from_slice(&sig.ty.to_be_bytes());
@@ -120,13 +108,9 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 
 			let sig_validation = match sig.alg {
 				8|10 => {
-					let alg = if sig.alg == 8 {
-						&signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY
-					} else {
-						&signature::RSA_PKCS1_1024_8192_SHA512_FOR_LEGACY_USE_ONLY
-					};
-					bytes_to_rsa_pk(&dnskey.pubkey).map_err(|_| ValidationError::Invalid)?
-						.verify(alg, &signed_data, &sig.signature)
+					hash_ctx.update(&signed_data);
+					let hash = hash_ctx.finish();
+					crypto::rsa::validate_rsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
 						.map_err(|_| ValidationError::Invalid)
 				},
 				13|14 => {
