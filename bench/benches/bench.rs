@@ -1,6 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 
 use dnssec_prover::crypto::rsa::validate_rsa;
+use dnssec_prover::crypto::secp256r1;
 
 pub fn bench_validate_rsa(bench: &mut Criterion) {
 	// A signature by the root key over the root DNSKEY RRSet
@@ -12,7 +13,18 @@ pub fn bench_validate_rsa(bench: &mut Criterion) {
 	}));
 }
 
+pub fn bench_validate_secp256r1(bench: &mut Criterion) {
+	// A signature by the com. key over the com. DNSKEY RRSet
+	let pk = [183, 31, 4, 101, 16, 29, 219, 226, 191, 12, 148, 85, 209, 47, 161, 108, 28, 218, 68, 244, 191, 27, 162, 85, 52, 24, 173, 31, 58, 169, 176, 105, 115, 242, 27, 132, 235, 83, 44, 244, 3, 94, 232, 212, 131, 44, 162, 109, 137, 48, 106, 125, 50, 86, 12, 12, 176, 18, 157, 69, 10, 193, 8, 53];
+	let sig = [207, 89, 121, 239, 214, 5, 201, 157, 91, 15, 126, 57, 251, 60, 13, 82, 33, 137, 67, 212, 128, 161, 32, 93, 133, 247, 165, 154, 143, 126, 112, 177, 71, 23, 220, 48, 182, 191, 235, 38, 123, 7, 183, 244, 255, 239, 156, 194, 199, 48, 23, 100, 97, 240, 232, 81, 92, 31, 150, 66, 123, 249, 135, 224];
+	let rrset_hash = [148, 51, 14, 246, 192, 70, 100, 66, 31, 67, 171, 251, 100, 195, 224, 203, 145, 160, 238, 28, 26, 167, 115, 82, 17, 58, 83, 114, 97, 53, 182, 30];
+	bench.bench_function("validate_secp256r1", |b| b.iter(|| {
+		secp256r1::validate_ecdsa(&pk, &sig, &rrset_hash).unwrap();
+	}));
+}
+
 criterion_group!(benches,
 	bench_validate_rsa,
+	bench_validate_secp256r1,
 );
 criterion_main!(benches);

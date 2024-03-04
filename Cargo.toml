@@ -16,12 +16,11 @@ features = ["std", "validation", "tokio"]
 [features]
 default = ["validation"]
 std = []
-validation = ["bitcoin_hashes", "ring", "hex_lit"]
+validation = ["bitcoin_hashes", "hex_lit"]
 tokio = ["tokio_crate/net", "tokio_crate/io-util", "std"]
 build_server = ["tokio", "tokio_crate/rt-multi-thread", "tokio_crate/macros"]
 
 [dependencies]
-ring = { version = "0.17", default-features = false, features = ["alloc"], optional = true }
 bitcoin_hashes = { version = "0.13", default-features = false, optional = true }
 hex_lit = { version = "0.1", default-features = false, features = ["rust_v_1_46"], optional = true }
 tokio_crate = { package = "tokio", version = "1.0", default-features = false, optional = true }

@@ -20,5 +20,8 @@
 //! policy. Thus we go ahead and use that for our hashing needs.
 
 pub mod bigint;
+mod ec;
 pub mod hash;
 pub mod rsa;
+pub mod secp256r1;
+pub mod secp384r1;

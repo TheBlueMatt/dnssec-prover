@@ -5,8 +5,6 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::cmp::{self, Ordering};
 
-use ring::signature;
-
 use crate::base32;
 use crate::crypto;
 use crate::rr::*;
@@ -106,34 +104,16 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 				record.write_u16_len_prefixed_data(&mut signed_data);
 			}
 
+			hash_ctx.update(&signed_data);
+			let hash = hash_ctx.finish();
 			let sig_validation = match sig.alg {
-				8|10 => {
-					hash_ctx.update(&signed_data);
-					let hash = hash_ctx.finish();
-					crypto::rsa::validate_rsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
-						.map_err(|_| ValidationError::Invalid)
-				},
-				13|14 => {
-					let alg = if sig.alg == 13 {
-						&signature::ECDSA_P256_SHA256_FIXED
-					} else {
-						&signature::ECDSA_P384_SHA384_FIXED
-					};
-
-					// Add 0x4 identifier to the ECDSA pubkey as expected by ring.
-					let mut key = Vec::with_capacity(dnskey.pubkey.len() + 1);
-					key.push(0x4);
-					key.extend_from_slice(&dnskey.pubkey);
-
-					signature::UnparsedPublicKey::new(alg, &key)
-						.verify(&signed_data, &sig.signature)
-						.map_err(|_| ValidationError::Invalid)
-				},
-				15 => {
-					signature::UnparsedPublicKey::new(&signature::ED25519, &dnskey.pubkey)
-						.verify(&signed_data, &sig.signature)
-						.map_err(|_| ValidationError::Invalid)
-				},
+				8|10 => crypto::rsa::validate_rsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
+					.map_err(|_| ValidationError::Invalid),
+				13 => crypto::secp256r1::validate_ecdsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
+					.map_err(|_| ValidationError::Invalid),
+				14 => crypto::secp384r1::validate_ecdsa(&dnskey.pubkey, &sig.signature, hash.as_ref())
+					.map_err(|_| ValidationError::Invalid),
+				// TODO: 15 => ED25519
 				_ => return Err(ValidationError::UnsupportedAlgorithm),
 			};
 			#[cfg(fuzzing)] {
