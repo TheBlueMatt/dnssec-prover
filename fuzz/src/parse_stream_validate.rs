@@ -52,7 +52,7 @@ fn main() {
 
 	let mut data = Vec::with_capacity(8192);
 	std::io::stdin().read_to_end(&mut data).unwrap();
-	let _ = parse_rr_stream(data).as_ref()
+	let _ = parse_rr_stream(&data).as_ref()
 		.map(|rrs| verify_rr_stream(rrs));
 }
 
