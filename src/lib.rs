@@ -55,3 +55,6 @@ pub mod query;
 
 #[cfg(feature = "validation")]
 pub mod validation;
+
+#[cfg(all(feature = "std", feature = "validation", test))]
+mod test;

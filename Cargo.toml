@@ -34,6 +34,7 @@ base64 = "0.21"
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 tokio_crate = { package = "tokio", version = "1.0", features = ["rt", "macros", "net", "rt-multi-thread"] }
 minreq = { version = "2.0" }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
 
 [profile.dev]
 opt-level = 1
