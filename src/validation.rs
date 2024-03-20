@@ -159,6 +159,12 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 					return Ok(());
 				}
 			}
+
+			// Note that technically there could be a key tag collision here, causing spurious
+			// verification failure. In most zones, there's only 2-4 DNSKEY entries, meaning a
+			// spurious collision shouldn't be much more often than one every billion zones. Much
+			// more likely in such a case, someone is just trying to do a KeyTrap attack, so we
+			// simply hard-fail and return an error immediately.
 			sig_validation?;
 
 			return Ok(());
@@ -167,9 +173,11 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 	Err(ValidationError::Invalid)
 }
 
-fn verify_dnskey_rrsig<'a, T, I>(sig: &RRSig, dses: T, records: Vec<&DnsKey>)
--> Result<(), ValidationError>
-where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
+/// Verify [`RRSig`]s over [`DnsKey`], returning a reference to the [`RRSig`] that matched, if any.
+fn verify_dnskeys<'r, 'd, RI, R, DI, D>(sigs: RI, dses: DI, records: Vec<&DnsKey>)
+-> Result<&'r RRSig, ValidationError>
+where RI: IntoIterator<IntoIter = R>, R: Iterator<Item = &'r RRSig>,
+      DI: IntoIterator<IntoIter = D>, D: Iterator<Item = &'d DS> + Clone {
 	let mut validated_dnskeys = Vec::with_capacity(records.len());
 	let dses = dses.into_iter();
 
@@ -210,7 +218,29 @@ where T: IntoIterator<IntoIter = I>, I: Iterator<Item = &'a DS> + Clone {
 			}
 		}
 	}
-	verify_rrsig(sig, validated_dnskeys.iter().map(|k| *k), records)
+
+	let mut found_unsupported_alg = false;
+	for sig in sigs {
+		match verify_rrsig(sig, validated_dnskeys.iter().map(|k| *k), records.clone()) {
+			Ok(()) => return Ok(sig),
+			Err(ValidationError::UnsupportedAlgorithm) => {
+				// There may be redundant signatures by different keys, where one we don't
+				// supprt and another we do. Ignore ones we don't support, but if there are
+				// no more, return UnsupportedAlgorithm
+				found_unsupported_alg = true;
+			},
+			Err(ValidationError::Invalid) => {
+				// If a signature is invalid, just immediately fail, avoiding KeyTrap issues.
+				return Err(ValidationError::Invalid);
+			},
+		}
+	}
+
+	if found_unsupported_alg {
+		Err(ValidationError::UnsupportedAlgorithm)
+	} else {
+		Err(ValidationError::Invalid)
+	}
 }
 
 /// Given a set of [`RR`]s, [`verify_rr_stream`] checks what it can and returns the set of
@@ -326,7 +356,6 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	let mut earliest_expiry = u64::MAX;
 	let mut min_ttl = u32::MAX;
 	'next_zone: while zone == "." || !pending_ds_sets.is_empty() {
-		let mut found_unsupported_alg = false;
 		let next_ds_set;
 		if let Some((next_zone, ds_set)) = pending_ds_sets.pop() {
 			next_ds_set = Some(ds_set);
@@ -336,88 +365,78 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 			next_ds_set = None;
 		}
 
+		let dnskey_rrsigs = inp.iter()
+			.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
+			.filter(|rrsig| rrsig.name.as_str() == zone && rrsig.ty == DnsKey::TYPE);
+		let dnskeys = inp.iter()
+			.filter_map(|rr| if let RR::DnsKey(dnskey) = rr { Some(dnskey) } else { None })
+			.filter(move |dnskey| dnskey.name.as_str() == zone);
+		let root_hints = root_hints();
+		let verified_dnskey_rrsig = if zone == "." {
+			verify_dnskeys(dnskey_rrsigs, &root_hints, dnskeys.clone().collect())?
+		} else {
+			debug_assert!(next_ds_set.is_some());
+			if next_ds_set.is_none() { break 'next_zone; }
+			verify_dnskeys(dnskey_rrsigs, next_ds_set.clone().unwrap(), dnskeys.clone().collect())?
+		};
+		latest_inception = cmp::max(latest_inception, resolve_time(verified_dnskey_rrsig.inception));
+		earliest_expiry = cmp::min(earliest_expiry, resolve_time(verified_dnskey_rrsig.expiration));
+		min_ttl = cmp::min(min_ttl, verified_dnskey_rrsig.orig_ttl);
 		for rrsig in inp.iter()
 			.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
-			.filter(|rrsig| rrsig.name.as_str() == zone && rrsig.ty == DnsKey::TYPE)
+			.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.ty != DnsKey::TYPE)
 		{
-			let dnskeys = inp.iter()
-				.filter_map(|rr| if let RR::DnsKey(dnskey) = rr { Some(dnskey) } else { None })
-				.filter(move |dnskey| dnskey.name.as_str() == zone);
-			let dnskeys_verified = if zone == "." {
-				verify_dnskey_rrsig(rrsig, &root_hints(), dnskeys.clone().collect())
-			} else {
-				debug_assert!(next_ds_set.is_some());
-				if next_ds_set.is_none() { break 'next_zone; }
-				verify_dnskey_rrsig(rrsig, next_ds_set.clone().unwrap(), dnskeys.clone().collect())
-			};
-			if dnskeys_verified.is_ok() {
-				latest_inception = cmp::max(latest_inception, resolve_time(rrsig.inception));
-				earliest_expiry = cmp::min(earliest_expiry, resolve_time(rrsig.expiration));
-				min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
-				for rrsig in inp.iter()
-					.filter_map(|rr| if let RR::RRSig(sig) = rr { Some(sig) } else { None })
-					.filter(move |rrsig| rrsig.key_name.as_str() == zone && rrsig.ty != DnsKey::TYPE)
-				{
-					if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
-					let signed_records = inp.iter()
-						.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
-					verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect())?;
-					latest_inception = cmp::max(latest_inception, resolve_time(rrsig.inception));
-					earliest_expiry = cmp::min(earliest_expiry, resolve_time(rrsig.expiration));
-					min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
-					match rrsig.ty {
-						// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
-						RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
-						DS::TYPE => {
-							if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.as_str()) {
-								pending_ds_sets.push((
-									&rrsig.name,
-									signed_records.filter_map(|rr|
-										if let RR::DS(ds) = rr { Some(ds) }
-										else { debug_assert!(false, "We already filtered by type"); None })
-								));
-							}
-						},
-						_ => {
-							if rrsig.labels != rrsig.name.labels() && rrsig.ty != NSec::TYPE {
-								if rrsig.ty == NSec3::TYPE {
-									// NSEC3 records should never appear on wildcards, so treat the
-									// whole proof as invalid
-									return Err(ValidationError::Invalid);
-								}
-								// If the RR used a wildcard, we need an NSEC/NSEC3 proof, which we
-								// check for at the end. Note that the proof should be for the
-								// "next closest" name, i.e. if the name here is a.b.c and it was
-								// signed as *.c, we want a proof for nothing being in b.c.
-								// Alternatively, if it was signed as *.b.c, we'd want a proof for
-								// a.b.c.
-								let proof_name = rrsig.name.trailing_n_labels(rrsig.labels + 1)
-									.ok_or(ValidationError::Invalid)?;
-								rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name, rrsig.ty));
-							}
-							for record in signed_records {
-								if !res.contains(&record) { res.push(record); }
-							}
-						},
-					}
+			if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
+			let signed_records = inp.iter()
+				.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
+			match verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect()) {
+				Ok(()) => {},
+				Err(ValidationError::UnsupportedAlgorithm) => continue,
+				Err(ValidationError::Invalid) => {
+					// If a signature is invalid, just immediately fail, avoiding KeyTrap issues.
+					return Err(ValidationError::Invalid);
 				}
-				continue 'next_zone;
-			} else if dnskeys_verified == Err(ValidationError::UnsupportedAlgorithm) {
-				// There may be redundant signatures by different keys, where one we don't supprt
-				// and another we do. Ignore ones we don't support, but if there are no more,
-				// return UnsupportedAlgorithm
-				found_unsupported_alg = true;
-			} else {
-				// We don't explicitly handle invalid signatures here, instead we move on to the
-				// next RRSig (if there is one) and return `Invalid` if no `RRSig`s match.
+			}
+			latest_inception = cmp::max(latest_inception, resolve_time(rrsig.inception));
+			earliest_expiry = cmp::min(earliest_expiry, resolve_time(rrsig.expiration));
+			min_ttl = cmp::min(min_ttl, rrsig.orig_ttl);
+			match rrsig.ty {
+				// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
+				RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
+				DS::TYPE => {
+					if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.as_str()) {
+						pending_ds_sets.push((
+							&rrsig.name,
+							signed_records.filter_map(|rr|
+								if let RR::DS(ds) = rr { Some(ds) }
+								else { debug_assert!(false, "We already filtered by type"); None })
+						));
+					}
+				},
+				_ => {
+					if rrsig.labels != rrsig.name.labels() && rrsig.ty != NSec::TYPE {
+						if rrsig.ty == NSec3::TYPE {
+							// NSEC3 records should never appear on wildcards, so treat the
+							// whole proof as invalid
+							return Err(ValidationError::Invalid);
+						}
+						// If the RR used a wildcard, we need an NSEC/NSEC3 proof, which we
+						// check for at the end. Note that the proof should be for the
+						// "next closest" name, i.e. if the name here is a.b.c and it was
+						// signed as *.c, we want a proof for nothing being in b.c.
+						// Alternatively, if it was signed as *.b.c, we'd want a proof for
+						// a.b.c.
+						let proof_name = rrsig.name.trailing_n_labels(rrsig.labels + 1)
+							.ok_or(ValidationError::Invalid)?;
+						rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name, rrsig.ty));
+					}
+					for record in signed_records {
+						if !res.contains(&record) { res.push(record); }
+					}
+				},
 			}
 		}
-		// No RRSigs were able to verify our DnsKey set
-		if found_unsupported_alg {
-			return Err(ValidationError::UnsupportedAlgorithm);
-		} else {
-			return Err(ValidationError::Invalid);
-		}
+		continue 'next_zone;
 	}
 	if res.is_empty() { return Err(ValidationError::Invalid) }
 	if latest_inception >= earliest_expiry { return Err(ValidationError::Invalid) }
@@ -583,7 +602,7 @@ mod tests {
 			signature: base64::decode("GIgwndRLXgt7GX/JNEqSvpYw5ij6EgeQivdC/hmNNuOd2MCQRSxZx2DdLZUoK0tmn2XmOd0vYP06DgkIMUpIXcBstw/Um55WQhvBkBTPIhuB3UvKYJstmq+8hFHWVJwKHTg9xu38JA43VgCV2AbzurbzNOLSgq+rDPelRXzpLr5aYE3y+EuvL+I5gusm4MMajnp5S+ioWOL+yWOnQE6XKoDmlrfcTrYfRSxRtJewPmGeCbNdwEUBOoLUVdkCjQG4uFykcKL40cY8EOhVmM3kXAyuPuNe2Xz1QrIcVad/U4FDns+hd8+W+sWnr8QAtIUFT5pBjXooGS02m6eMdSeU6g==").unwrap(),
 		};
 		let root_hints = root_hints();
-		verify_dnskey_rrsig(&dnskey_rrsig, &root_hints, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &root_hints, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
 		(dnskeys, rrs)
 	}
@@ -612,7 +631,7 @@ mod tests {
 			expiration: 1710342155, inception: 1709045855, key_tag: 19718, key_name: "com.".try_into().unwrap(),
 			signature: base64::decode("lF2B9nXZn0CgytrHH6xB0NTva4G/aWvg/ypnSxJ8+ZXlvR0C4974yB+nd2ZWzWMICs/oPYMKoQHqxVjnGyu8nA==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &com_ds, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &com_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![com_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
 		(dnskeys, rrs)
@@ -645,7 +664,7 @@ mod tests {
 			expiration: 1710689605, inception: 1708871605, key_tag: 46082, key_name: "ninja.".try_into().unwrap(),
 			signature: base64::decode("kYxV1z+9Ikxqbr13N+8HFWWnAUcvHkr/dmkdf21mliUhH4cxeYCXC6a95X+YzjYQEQi3fU+S346QBDJkbFYCca5q/TzUdE7ej1B/0uTzhgNrQznm0O6sg6DI3HuqDfZp2oaBQm2C/H4vjkcUW9zxgKP8ON0KKLrZUuYelGazeGSOscjDDlmuNMD7tHhFrmK9BiiX+8sp8Cl+IE5ArP+CPXsII+P+R2QTmTqw5ovJch2FLRMRqCliEzTR/IswBI3FfegZR8h9xJ0gfyD2rDqf6lwJhD1K0aS5wxia+bgzpRIKwiGfP87GDYzkygHr83QbmZS2YG1nxlnQ2rgkqTGgXA==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &ninja_ds, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &ninja_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![ninja_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskeys[2].clone().into(),
 			dnskey_rrsig.into()];
@@ -679,7 +698,7 @@ mod tests {
 			expiration:1710262250, inception: 1709047250, key_tag: 25630, key_name: "mattcorallo.com.".try_into().unwrap(),
 			signature: base64::decode("dMLDvNU96m+tfgpDIQPxMBJy7T0xyZDj3Wws4b4E6+g3nt5iULdWJ8Eqrj+86KLerOVt7KH4h/YcHP18hHdMGA==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &mattcorallo_ds, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &mattcorallo_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![mattcorallo_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskeys[2].clone().into(),
 			dnskey_rrsig.into()];
@@ -724,7 +743,7 @@ mod tests {
 			expiration: 1709947337, inception: 1708732337, key_tag: 63175, key_name: "bitcoin.ninja.".try_into().unwrap(),
 			signature: base64::decode("Y3To5FZoZuBDUMtIBZXqzRtufyRqOlDqbHVcoZQitXxerCgNQ1CsVdmoFVMmZqRV5n4itINX2x+9G/31j410og==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &bitcoin_ninja_ds, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &bitcoin_ninja_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![bitcoin_ninja_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
 		(dnskeys, rrs)
@@ -890,7 +909,7 @@ mod tests {
 			key_tag: 8036, key_name: "nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			signature: base64::decode("nX+hkH14Kvjp26Z8x/pjYh5CQW3p9lZQQ+FVJcKHyfjAilEubpw6ihlPpb3Ddh9BbyxhCEFhXDMG2g4od9Y2ow==").unwrap(),
 		};
-		verify_dnskey_rrsig(&dnskey_rrsig, &bitcoin_ninja_ds, dnskeys.iter().collect()).unwrap();
+		verify_dnskeys([&dnskey_rrsig], &bitcoin_ninja_ds, dnskeys.iter().collect()).unwrap();
 		let rrs = vec![bitcoin_ninja_ds.pop().unwrap().into(), ds_rrsig.into(),
 			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
 		(dnskeys, rrs)
