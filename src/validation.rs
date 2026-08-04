@@ -412,6 +412,9 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				// RRSigs shouldn't cover child `DnsKey`s or other `RRSig`s
 				RRSig::TYPE|DnsKey::TYPE => return Err(ValidationError::Invalid),
 				DS::TYPE => {
+					// Ignore wildcard `DS` records as it would be impossible to include the
+					// nearest-neighbor non-existence NSEC/NSEC3 required after the zone cut.
+					if rrsig.labels != rrsig.name.labels() { continue; }
 					if !pending_ds_sets.iter().any(|(pending_zone, _)| pending_zone == &rrsig.name.as_str()) {
 						pending_ds_sets.push((
 							&rrsig.name,
