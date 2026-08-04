@@ -69,6 +69,8 @@ where Keys: IntoIterator<Item = &'a DnsKey> {
 			if dnskey.protocol != 3 { continue; }
 			// The ZONE flag must be set if we're going to validate RRs with this key.
 			if dnskey.flags & 0b1_0000_0000 == 0 { continue; }
+			// the REVOKE flag must not be set.
+			if dnskey.flags & 0b0_1000_0000 != 0 { continue; }
 			if dnskey.alg != sig.alg { continue; }
 
 			let mut hash_ctx = match sig.alg {
@@ -1163,6 +1165,32 @@ mod tests {
 		let dnskeys = mattcorallo_dnskey().0;
 		let (txts, txt_rrsig) = mattcorallo_txt_record();
 		verify_rrsig(&txt_rrsig, &dnskeys, txts.iter().collect()).unwrap();
+	}
+
+	#[test]
+	fn check_revoked_dnskey_is_not_used() {
+		let dnskeys = bitcoin_ninja_dnskey().0;
+		let (txt, txt_rrsig) = bitcoin_ninja_txt_record();
+		let txt_resp = [txt];
+		verify_rrsig(&txt_rrsig, &dnskeys, txt_resp.iter().collect()).unwrap();
+
+		let signing_key = dnskeys.iter().find(|key| key.key_tag() == txt_rrsig.key_tag).unwrap();
+
+		// Build a REVOKEd key which keeps the same key tag as the real signing key but whose
+		// public key is corrupted. Setting REVOKE adds 0x80 to the key tag, so we take that back
+		// out of an odd-indexed public key byte, which `key_tag` sums in un-shifted.
+		let mut revoked = signing_key.clone();
+		revoked.flags |= 0b0_1000_0000;
+		let fixup_idx = revoked.pubkey.iter().enumerate()
+			.position(|(idx, byte)| idx % 2 == 1 && *byte >= 0x80).unwrap();
+		revoked.pubkey[fixup_idx] -= 0x80;
+		assert_eq!(revoked.key_tag(), signing_key.key_tag());
+		assert_ne!(revoked.pubkey, signing_key.pubkey);
+
+		// A revoked key has to be skipped outright. If it isn't, it gets picked ahead of the real
+		// key - it matches on key tag, protocol, ZONE flag and algorithm alike - and its corrupted
+		// public key then fails the signature check, taking the whole proof down with it.
+		verify_rrsig(&txt_rrsig, vec![&revoked, signing_key], txt_resp.iter().collect()).unwrap();
 	}
 
 	#[test]
