@@ -589,7 +589,17 @@ mod tests {
 		let mut rrs = parse_rr_stream(&proof).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		assert_eq!(verified_rrs.verified_rrs.len(), 2);
+		assert_eq!(verified_rrs.verified_rrs.iter().filter(|rr| {
+			const PFX: &'static str = "bitcoin:";
+			if let RR::Txt(txt) = &rr {
+				txt.data.iter()
+					.take(PFX.len())
+					.filter_map(|b| char::from_u32(b.into()))
+					.map(|c| c.to_ascii_lowercase())
+					.eq(PFX.chars())
+			} else { false }
+		}).count(), 1);
 
 		let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		assert!(verified_rrs.valid_from < now);
@@ -634,7 +644,17 @@ mod tests {
 		let mut rrs = parse_rr_stream(&proof).unwrap();
 		rrs.shuffle(&mut rand::rngs::OsRng);
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		assert_eq!(verified_rrs.verified_rrs.len(), 2);
+		assert_eq!(verified_rrs.verified_rrs.iter().filter(|rr| {
+			const PFX: &'static str = "bitcoin:";
+			if let RR::Txt(txt) = &rr {
+				txt.data.iter()
+					.take(PFX.len())
+					.filter_map(|b| char::from_u32(b.into()))
+					.map(|c| c.to_ascii_lowercase())
+					.eq(PFX.chars())
+			} else { false }
+		}).count(), 1);
 
 		let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		assert!(verified_rrs.valid_from < now);
@@ -652,18 +672,26 @@ mod tests {
 			let mut rrs = parse_rr_stream(&proof).unwrap();
 			rrs.shuffle(&mut rand::rngs::OsRng);
 			let verified_rrs = verify_rr_stream(&rrs).unwrap();
-			assert_eq!(verified_rrs.verified_rrs.len(), 2);
+			// The CName plus both TXT records at its target.
+			assert_eq!(verified_rrs.verified_rrs.len(), 3);
 
 			let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 			assert!(verified_rrs.valid_from < now);
 			assert!(verified_rrs.expires > now);
 
 			let resolved_rrs = verified_rrs.resolve_name(&query_name);
-			assert_eq!(resolved_rrs.len(), 1);
-			if let RR::Txt(txt) = &resolved_rrs[0] {
-				assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
-				assert!(txt.data.as_vec().starts_with(b"bitcoin:"));
-			} else { panic!(); }
+			assert_eq!(resolved_rrs.len(), 2);
+			assert_eq!(resolved_rrs.iter().filter(|rr| {
+				const PFX: &'static str = "bitcoin:";
+				if let RR::Txt(txt) = &rr {
+					assert_eq!(txt.name.as_str(), "matt.user._bitcoin-payment.mattcorallo.com.");
+					txt.data.iter()
+						.take(PFX.len())
+						.filter_map(|b| char::from_u32(b.into()))
+						.map(|c| c.to_ascii_lowercase())
+						.eq(PFX.chars())
+				} else { false }
+			}).count(), 1);
 		}
 	}
 

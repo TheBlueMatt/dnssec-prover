@@ -166,6 +166,7 @@ mod imp {
 mod test {
 	use super::*;
 
+	use crate::rr::RR;
 	use crate::ser::parse_rr_stream;
 	use crate::validation::verify_rr_stream;
 
@@ -184,7 +185,17 @@ mod test {
 		assert_eq!(resp.status_code, 200);
 		let rrs = parse_rr_stream(resp.as_bytes()).unwrap();
 		let verified_rrs = verify_rr_stream(&rrs).unwrap();
-		assert_eq!(verified_rrs.verified_rrs.len(), 1);
+		assert_eq!(verified_rrs.verified_rrs.len(), 2);
+		assert_eq!(verified_rrs.verified_rrs.iter().filter(|rr| {
+			const PFX: &'static str = "bitcoin:";
+			if let RR::Txt(txt) = &rr {
+				txt.data.iter()
+					.take(PFX.len())
+					.filter_map(|b| char::from_u32(b.into()))
+					.map(|c| c.to_ascii_lowercase())
+					.eq(PFX.chars())
+			} else { false }
+		}).count(), 1);
 	}
 
 	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
