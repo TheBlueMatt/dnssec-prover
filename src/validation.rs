@@ -576,11 +576,15 @@ impl<'a> VerifiedRRStream<'a> {
 			}
 
 			let mut dname_search = self.verified_rrs.iter()
-				.filter(|rr| name.ends_with_labels(&**rr.name()))
+				.filter(|rr| name.len() > rr.name().len() && name.ends_with_labels(&**rr.name()))
 				.filter_map(|rr| if let RR::DName(dn) = rr { Some(dn) } else { None });
 			if let Some(dname) = dname_search.next() {
 				let prefix = name.strip_suffix(&*dname.name).expect("We just filtered for this");
-				let resolved_name = prefix.to_owned() + &dname.delegation_name;
+				let resolved_name = if dname.delegation_name.as_str() == "." {
+					prefix.to_owned()
+				} else {
+					prefix.to_owned() + &dname.delegation_name
+				};
 				dname_name = if let Ok(name) = resolved_name.try_into() {
 					name
 				} else {
@@ -1274,6 +1278,50 @@ mod tests {
 			assert_eq!(txt.name.as_str(), "notdname_test.dnssec_proof_tests.bitcoin.ninja.");
 			assert_eq!(txt.data.as_vec(), b"not_dnamed");
 		} else { panic!(); }
+	}
+
+	#[test]
+	fn check_dname_label_boundaries() {
+		// The substitution cases from RFC 6672 section 2.2's Table 1. A TXT is placed wherever
+		// the RFC says we should end up, so a wrong substitution finds nothing.
+		let cases: &[(&str, &str, &str, Option<&str>)] = &[
+			// query, DNAME owner, DNAME target, where the RFC says we land
+			("a.example.com.", "example.com.", "example.net.", Some("a.example.net.")),
+			("a.b.example.com.", "example.com.", "example.net.", Some("a.b.example.net.")),
+			("a.x.example.com.", "x.example.com.", "example.net.", Some("a.example.net.")),
+			("a.example.com.", "example.com.", "y.example.net.", Some("a.y.example.net.")),
+			// Only whole labels are replaced, so this is no match at all.
+			("ab.example.com.", "b.example.com.", "example.net.", None),
+			// A DNAME does not redirect its own owner name (RFC 6672 section 2.3).
+			("example.com.", "example.com.", "example.net.", None),
+			// A root delegation name must not leave a trailing empty label behind.
+			("a.x.", "x.", ".", Some("a.")),
+		];
+		for (query, owner, target, expected) in cases {
+			// For the no-match rows the name resolves to itself, so that is where the TXT goes.
+			let landing = expected.unwrap_or(query);
+			let rrs = vec![
+				RR::DName(DName {
+					name: (*owner).try_into().unwrap(),
+					delegation_name: (*target).try_into().unwrap(),
+				}),
+				RR::Txt(Txt {
+					name: landing.try_into().unwrap(),
+					data: (*landing).try_into().unwrap(),
+				}),
+			];
+			let stream = VerifiedRRStream {
+				verified_rrs: rrs.iter().collect(),
+				valid_from: 0, expires: u64::MAX, max_cache_ttl: 0,
+			};
+			// Note that a DNAME's own owner name may carry other records, so for the rows which
+			// resolve to the owner itself the DNAME comes back alongside the TXT.
+			let resolved = stream.resolve_name(&(*query).try_into().unwrap());
+			let txts: Vec<_> = resolved.iter()
+				.filter_map(|rr| if let RR::Txt(txt) = rr { Some(txt) } else { None }).collect();
+			assert_eq!(txts.len(), 1, "{} + DNAME {} -> {}", query, owner, target);
+			assert_eq!(txts[0].name.as_str(), landing, "{} + DNAME {} -> {}", query, owner, target);
+		}
 	}
 
 	#[test]
