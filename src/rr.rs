@@ -45,6 +45,24 @@ impl Name {
 			self.as_str().splitn(labels as usize - n as usize + 1, '.').last()
 		}
 	}
+	/// Checks if the provided `suffix` is a suffix of `self`.
+	///
+	/// This is similar to `str::ends_with` but validates that the suffix is in terms of labels,
+	/// rather than raw characters.
+	pub fn ends_with_labels<N: core::ops::Deref<Target = str>>(&self, suffix: N) -> bool {
+		if self.0.len() < suffix.len() { return false; }
+		if self.0.ends_with(".") && &*suffix == "." { return true; }
+		let suffix_lowercase_bytes = suffix.bytes().map(|b| b.to_ascii_lowercase());
+		let name_suffix_lowercase =
+			self.bytes().skip(self.len() - suffix.len()).map(|b| b.to_ascii_lowercase());
+		if !name_suffix_lowercase.eq(suffix_lowercase_bytes) {
+			return false;
+		}
+		if self.len() == suffix.len() {
+			return true;
+		}
+		self.as_bytes()[self.len() - suffix.len() - 1] == b'.'
+	}
 }
 impl core::ops::Deref for Name {
 	type Target = str;

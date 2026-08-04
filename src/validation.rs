@@ -387,7 +387,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				return Err(ValidationError::ValidationCountLimited);
 			}
 
-			if !rrsig.name.ends_with(zone) { return Err(ValidationError::Invalid); }
+			if !rrsig.name.ends_with_labels(zone) { return Err(ValidationError::Invalid); }
 			let signed_records = inp.iter()
 				.filter(|rr| rr.name() == &rrsig.name && rr.ty() == rrsig.ty);
 			match verify_rrsig(rrsig, dnskeys.clone(), signed_records.clone().collect()) {
@@ -451,7 +451,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	'proof_search_loop: while let Some((name, zone)) = rrs_needing_non_existence_proofs.pop() {
 		let nsec_search = res.iter()
 			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None })
-			.filter(|nsec| nsec.name.ends_with(zone.as_str()));
+			.filter(|nsec| nsec.name.ends_with_labels(zone.as_str()));
 		for nsec in nsec_search {
 			// Note that the last NSEC in a zone's chain wraps around.
 			let after_start = nsec_ord(&nsec.name, name) == Ordering::Less;
@@ -468,7 +468,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 		}
 		let nsec3_search = res.iter()
 			.filter_map(|rr| if let RR::NSec3(nsec3) = rr { Some(nsec3) } else { None })
-			.filter(|nsec3| nsec3.name.ends_with(zone.as_str()));
+			.filter(|nsec3| nsec3.name.ends_with_labels(zone.as_str()));
 
 		// Because we will only ever have two entries, a Vec is simpler than a map here.
 		let mut nsec3params_to_name_hash = Vec::new();
@@ -568,7 +568,7 @@ impl<'a> VerifiedRRStream<'a> {
 			}
 
 			let mut dname_search = self.verified_rrs.iter()
-				.filter(|rr| name.ends_with(&**rr.name()))
+				.filter(|rr| name.ends_with_labels(&**rr.name()))
 				.filter_map(|rr| if let RR::DName(dn) = rr { Some(dn) } else { None });
 			if let Some(dname) = dname_search.next() {
 				let prefix = name.strip_suffix(&*dname.name).expect("We just filtered for this");
@@ -802,6 +802,44 @@ mod tests {
 			signature: base64::decode("67U3kvg35HyzESYD4oQ6NtIklzuMUDGkmrP+Bu0Yt0ZWJ249a1+pOMD3IiltgV+kidT6e/17d1HUM7zIKROAJA==").unwrap(),
 		};
 		(cname_resp, cname_rrsig)
+	}
+
+	fn bitcoin_ninja_dname_record() -> (DName, RRSig) {
+		let dname = DName {
+			name: "dname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			delegation_name: "cname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+		};
+		let dname_rrsig = RRSig {
+			name: "dname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: DName::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1787178279,
+			inception: 1785963279, key_tag: 62306, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("vxE+K/VVKWpnTPGSDYavj2WTWxCti4TV3KAhzExSaEQBCHbTh7qTptUT33mnOanYtcRV5X46IQRNqZUlHRrDtw==").unwrap(),
+		};
+		(dname, dname_rrsig)
+	}
+
+	fn bitcoin_ninja_dname_sibling_records() -> (Txt, RRSig, Txt, RRSig) {
+		let sibling = Txt {
+			name: "notdname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			data: "not_dnamed".try_into().unwrap(),
+		};
+		let sibling_rrsig = RRSig {
+			name: "notdname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1787258898,
+			inception: 1786043898, key_tag: 62306, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("CTnx0YktprRMA14f434Zwyu9NBYxti3NOfIcv5cPCnJxQvU7UmOOuBMtKpnSvvJBKpsbhXfnZCZFazG1Z6fdow==").unwrap(),
+		};
+		let redirected = Txt {
+			name: "notcname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			data: "wrongly_dnamed".try_into().unwrap(),
+		};
+		let redirected_rrsig = RRSig {
+			name: "notcname_wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30, expiration: 1787258898,
+			inception: 1786043898, key_tag: 62306, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("uwLsAhkqQHwafsp+mt5X0cwbNXEuIM0zCT+qEJaC65TxS5FNi9PFOS8zo730q70W53OMvDBSkw6xKdf4/mEsSg==").unwrap(),
+		};
+		(sibling, sibling_rrsig, redirected, redirected_rrsig)
 	}
 
 	fn bitcoin_ninja_txt_sort_edge_cases_records() -> (Vec<Txt>, RRSig) {
@@ -1163,6 +1201,45 @@ mod tests {
 		let (cname, cname_rrsig) = bitcoin_ninja_cname_record();
 		let cname_resp = [cname];
 		verify_rrsig(&cname_rrsig, &dnskeys, cname_resp.iter().collect()).unwrap();
+	}
+
+	#[test]
+	fn check_dname_does_not_capture_sibling_name() {
+		// We previously had a bug where we used string `ends_with` rather than label-based
+		// `ends_with` to check for children, including in DNAME records, which we test here.
+		let resolve = |extra: Vec<RR>| -> Vec<RR> {
+			let mut rr_stream = Vec::new();
+			for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			let (dname, dname_rrsig) = bitcoin_ninja_dname_record();
+			for rr in [RR::DName(dname), RR::RRSig(dname_rrsig)] {
+				write_rr(&rr, 1, &mut rr_stream);
+			}
+			for rr in extra { write_rr(&rr, 1, &mut rr_stream); }
+
+			let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			let verified_rrs = verify_rr_stream(&rrs).unwrap();
+			let name = "notdname_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap();
+			verified_rrs.resolve_name(&name).into_iter().cloned().collect()
+		};
+
+		let (sibling, sibling_rrsig, redirected, redirected_rrsig) = bitcoin_ninja_dname_sibling_records();
+
+		assert_eq!(resolve(Vec::new()), Vec::new());
+		assert_eq!(resolve(vec![RR::Txt(redirected.clone()), RR::RRSig(redirected_rrsig.clone())]), Vec::new());
+
+		let resolved = resolve(vec![RR::Txt(sibling.clone()), RR::RRSig(sibling_rrsig.clone())]);
+		let resolved_full = resolve(vec![
+                    RR::Txt(sibling), RR::RRSig(sibling_rrsig), RR::Txt(redirected), RR::RRSig(redirected_rrsig),
+                ]);
+		assert_eq!(resolved, resolved_full);
+		assert_eq!(resolved.len(), 1);
+		if let RR::Txt(txt) = &resolved[0] {
+			assert_eq!(txt.name.as_str(), "notdname_test.dnssec_proof_tests.bitcoin.ninja.");
+			assert_eq!(txt.data.as_vec(), b"not_dnamed");
+		} else { panic!(); }
 	}
 
 	#[test]
