@@ -340,6 +340,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	let mut zone = ".";
 	let mut res = Vec::new();
 	let mut rrs_needing_non_existence_proofs = Vec::new();
+	let mut nsec_records = Vec::new();
 	let mut pending_ds_sets = Vec::with_capacity(1);
 	let mut latest_inception = 0;
 	let mut earliest_expiry = u64::MAX;
@@ -436,7 +437,12 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 						rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name));
 					}
 					for record in signed_records {
-						if !res.contains(&record) { res.push(record); }
+						if !res.contains(&record) {
+							if record.ty() == NSec::TYPE || record.ty() == NSec3::TYPE {
+								nsec_records.push((record, &rrsig.key_name));
+							}
+							res.push(record);
+						}
 					}
 				},
 			}
@@ -449,9 +455,10 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 	// First sort the proofs we're looking for so that the retains below avoid shifting.
 	rrs_needing_non_existence_proofs.sort_unstable_by(nsec_ord_extra);
 	'proof_search_loop: while let Some((name, zone)) = rrs_needing_non_existence_proofs.pop() {
-		let nsec_search = res.iter()
-			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None })
-			.filter(|nsec| nsec.name.ends_with_labels(zone.as_str()));
+		let local_zone_nsecs =
+			nsec_records.iter().filter(|(_, nsec_zone)| *nsec_zone == zone).map(|(rr, _)| rr);
+		let nsec_search = local_zone_nsecs.clone()
+			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None });
 		for nsec in nsec_search {
 			// Note that the last NSEC in a zone's chain wraps around.
 			let after_start = nsec_ord(&nsec.name, name) == Ordering::Less;
@@ -462,14 +469,13 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				after_start || before_end
 			};
 			if name_contained {
-				rrs_needing_non_existence_proofs.retain(|(n, _)| *n != name);
+				rrs_needing_non_existence_proofs.retain(|(n, z)| *n != name || *z != zone);
 				continue 'proof_search_loop;
 			}
 		}
-		let nsec3_search = res.iter()
-			.filter_map(|rr| if let RR::NSec3(nsec3) = rr { Some(nsec3) } else { None })
-			.filter(|nsec3| nsec3.name.ends_with_labels(zone.as_str()));
 
+		let nsec3_search = local_zone_nsecs.clone()
+			.filter_map(|rr| if let RR::NSec3(nsec3) = rr { Some(nsec3) } else { None });
 		// Because we will only ever have two entries, a Vec is simpler than a map here.
 		let mut nsec3params_to_name_hash = Vec::new();
 		for nsec3 in nsec3_search.clone() {
@@ -530,7 +536,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 				after_start || before_end
 			};
 			if hash_contained {
-				rrs_needing_non_existence_proofs.retain(|(n, _)| *n != name);
+				rrs_needing_non_existence_proofs.retain(|(n, z)| *n != name || *z != zone);
 				continue 'proof_search_loop;
 			}
 		}
@@ -1450,6 +1456,39 @@ mod tests {
 		// `a` sorts after the zone apex record, so is past the wraparound NSEC.
 		check_proof("a").unwrap_err();
 		check_proof("nested.zent_test").unwrap_err();
+	}
+
+	#[test]
+	fn check_descendant_zone_denial_rejected() {
+		// A wildcard TXT signed by `bitcoin.ninja.`, whose next closer name therefore has to be
+		// shown not to exist in `bitcoin.ninja.`.
+		let build = |proof: Vec<RR>| {
+			let mut rr_stream = Vec::new();
+			for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_nsec_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			let (txt, txt_rrsig, _, _) = bitcoin_ninja_wildcard_record("asdf");
+			for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in proof { write_rr(&rr, 1, &mut rr_stream); }
+			let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			verify_rr_stream(&rrs).map(|_| ())
+		};
+
+		// `bitcoin.ninja.`'s own NSEC3 covering the name is the proof which actually applies.
+		let (_, _, nsec3, nsec3_rrsig) = bitcoin_ninja_wildcard_record("asdf");
+		build(vec![RR::NSec3(nsec3), RR::RRSig(nsec3_rrsig)]).unwrap();
+
+		// The same query "proven" with a record from `nsec_tests.dnssec_proof_tests.bitcoin.ninja.`
+		// instead - a zone delegated *beneath* `bitcoin.ninja.`, and so one whose names are still
+		// suffixed by it. Its last NSEC wraps back to its own apex and so spans everything outside
+		// that zone, which is not its to speak for. Note that this has to be the *wrapping* NSEC:
+		// with any other one the name simply falls outside the range and the test would pass
+		// without the zone check below ever being consulted.
+		let (_, _, nsec, nsec_rrsig) = bitcoin_ninja_nsec_wraparound_wildcard_record("a");
+		assert_eq!(build(vec![RR::NSec(nsec), RR::RRSig(nsec_rrsig)]).unwrap_err(),
+			ValidationError::Invalid);
 	}
 
 	#[test]
