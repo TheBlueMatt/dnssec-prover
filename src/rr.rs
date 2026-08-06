@@ -448,6 +448,9 @@ impl StaticRecord for Txt {
 		if self.data.iter().all(|b| b >= 0x20 && b <= 0x7e) {
 			res += "\"";
 			for b in self.data.iter() {
+				if b == b'"' || b == b'\\' {
+					res.push('\\');
+				}
 				res.push(b as char);
 			}
 			res += "\"}";
