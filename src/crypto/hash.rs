@@ -81,10 +81,10 @@ mod imp {
 		fn dnssec_prover_sha512_finish(ctx: *mut u8, out: *mut [u8; 512 / 8]);
 	}
 	pub(crate) enum Hasher {
-		Sha1(*mut u8),
-		Sha256(*mut u8),
-		Sha384(*mut u8),
-		Sha512(*mut u8),
+		Sha1((*mut u8, bool)),
+		Sha256((*mut u8, bool)),
+		Sha384((*mut u8, bool)),
+		Sha512((*mut u8, bool)),
 	}
 
 	pub(crate) enum HashResult {
@@ -106,44 +106,81 @@ mod imp {
 	}
 
 	impl Hasher {
-		pub(crate) fn sha1() -> Hasher { Hasher::Sha1(unsafe { dnssec_prover_sha1_init() }) }
-		pub(crate) fn sha256() -> Hasher { Hasher::Sha256(unsafe { dnssec_prover_sha256_init() }) }
-		pub(crate) fn sha384() -> Hasher { Hasher::Sha384(unsafe { dnssec_prover_sha384_init() }) }
-		pub(crate) fn sha512() -> Hasher { Hasher::Sha512(unsafe { dnssec_prover_sha512_init() }) }
+		pub(crate) fn sha1() -> Hasher { Hasher::Sha1((unsafe { dnssec_prover_sha1_init() }, false)) }
+		pub(crate) fn sha256() -> Hasher { Hasher::Sha256((unsafe { dnssec_prover_sha256_init() }, false)) }
+		pub(crate) fn sha384() -> Hasher { Hasher::Sha384((unsafe { dnssec_prover_sha384_init() }, false)) }
+		pub(crate) fn sha512() -> Hasher { Hasher::Sha512((unsafe { dnssec_prover_sha512_init() }, false)) }
 
 		pub(crate) fn update(&mut self, buf: &[u8]) {
 			unsafe {
 				match self {
-					Hasher::Sha1(hasher) => dnssec_prover_sha1_update(*hasher, buf.as_ptr(), buf.len()),
-					Hasher::Sha256(hasher) => dnssec_prover_sha256_update(*hasher, buf.as_ptr(), buf.len()),
-					Hasher::Sha384(hasher) => dnssec_prover_sha384_update(*hasher, buf.as_ptr(), buf.len()),
-					Hasher::Sha512(hasher) => dnssec_prover_sha512_update(*hasher, buf.as_ptr(), buf.len()),
+					Hasher::Sha1((hasher, _)) => dnssec_prover_sha1_update(*hasher, buf.as_ptr(), buf.len()),
+					Hasher::Sha256((hasher, _)) => dnssec_prover_sha256_update(*hasher, buf.as_ptr(), buf.len()),
+					Hasher::Sha384((hasher, _)) => dnssec_prover_sha384_update(*hasher, buf.as_ptr(), buf.len()),
+					Hasher::Sha512((hasher, _)) => dnssec_prover_sha512_update(*hasher, buf.as_ptr(), buf.len()),
 				}
 			}
 		}
 
-		pub(crate) fn finish(self) -> HashResult {
+		pub(crate) fn finish(mut self) -> HashResult {
 			unsafe {
-				match self {
-					Hasher::Sha1(hasher) => {
+				match &mut self {
+					Hasher::Sha1((hasher, finished)) => {
 						let mut res = [0; 160 / 8];
-						dnssec_prover_sha1_finish(hasher, &mut res);
+						dnssec_prover_sha1_finish(*hasher, &mut res);
+						*finished = true;
 						HashResult::Sha1(res)
 					},
-					Hasher::Sha256(hasher) => {
+					Hasher::Sha256((hasher, finished)) => {
 						let mut res = [0; 256 / 8];
-						dnssec_prover_sha256_finish(hasher, &mut res);
+						dnssec_prover_sha256_finish(*hasher, &mut res);
+						*finished = true;
 						HashResult::Sha256(res)
 					},
-					Hasher::Sha384(hasher) => {
+					Hasher::Sha384((hasher, finished)) => {
 						let mut res = [0; 384 / 8];
-						dnssec_prover_sha384_finish(hasher, &mut res);
+						dnssec_prover_sha384_finish(*hasher, &mut res);
+						*finished = true;
 						HashResult::Sha384(res)
 					},
-					Hasher::Sha512(hasher) => {
+					Hasher::Sha512((hasher, finished)) => {
 						let mut res = [0; 512 / 8];
-						dnssec_prover_sha512_finish(hasher, &mut res);
+						dnssec_prover_sha512_finish(*hasher, &mut res);
+						*finished = true;
 						HashResult::Sha512(res)
+					},
+				}
+			}
+		}
+	}
+
+	impl Drop for Hasher {
+		fn drop(&mut self) {
+			unsafe {
+				match self {
+					Hasher::Sha1((hasher, finished)) => {
+						if !*finished {
+							let mut res = [0; 160 / 8];
+							dnssec_prover_sha1_finish(*hasher, &mut res);
+						}
+					},
+					Hasher::Sha256((hasher, finished)) => {
+						if !*finished {
+							let mut res = [0; 256 / 8];
+							dnssec_prover_sha256_finish(*hasher, &mut res);
+						}
+					},
+					Hasher::Sha384((hasher, finished)) => {
+						if !*finished {
+							let mut res = [0; 384 / 8];
+							dnssec_prover_sha384_finish(*hasher, &mut res);
+						}
+					},
+					Hasher::Sha512((hasher, finished)) => {
+						if !*finished {
+							let mut res = [0; 512 / 8];
+							dnssec_prover_sha512_finish(*hasher, &mut res);
+						}
 					},
 				}
 			}
