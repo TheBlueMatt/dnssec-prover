@@ -810,7 +810,7 @@ impl StaticRecord for RRSig {
 	fn json(&self) -> String {
 		let mut out = String::with_capacity(256 + self.signature.len()*2);
 		write!(&mut out,
-			"{{\"type\":\"ds\",\"name\":\"{}\",\"signed_record_type\":{},\"alg\":{},\"signed_labels\":{},\"orig_ttl\":{},\"expiration\"{},\"inception\":{},\"key_tag\":{},\"key_name\":\"{}\",\"signature\":\"",
+			"{{\"type\":\"ds\",\"name\":\"{}\",\"signed_record_type\":{},\"alg\":{},\"signed_labels\":{},\"orig_ttl\":{},\"expiration\":{},\"inception\":{},\"key_tag\":{},\"key_name\":\"{}\",\"signature\":\"",
 			self.name.0, self.ty, self.alg, self.labels, self.orig_ttl, self.expiration, self.inception, self.key_tag, self.key_name.0
 		).expect("Write to a String shouldn't fail");
 		for c in self.signature.iter() {
