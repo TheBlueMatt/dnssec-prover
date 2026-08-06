@@ -566,7 +566,7 @@ impl<'a> VerifiedRRStream<'a> {
 	pub fn resolve_name<'b>(&self, name_param: &'b Name) -> Vec<&'a RR> where 'a: 'b {
 		let mut dname_name;
 		let mut name = name_param;
-		loop {
+		for _ in 0..MAX_PROOF_STEPS {
 			let mut cname_search = self.verified_rrs.iter()
 				.filter(|rr| rr.name() == name)
 				.filter_map(|rr| if let RR::CName(cn) = rr { Some(cn) } else { None });
@@ -597,6 +597,7 @@ impl<'a> VerifiedRRStream<'a> {
 
 			return self.verified_rrs.iter().filter(|rr| rr.name() == name).copied().collect();
 		}
+		Vec::new()
 	}
 }
 
@@ -1321,6 +1322,35 @@ mod tests {
 				.filter_map(|rr| if let RR::Txt(txt) = rr { Some(txt) } else { None }).collect();
 			assert_eq!(txts.len(), 1, "{} + DNAME {} -> {}", query, owner, target);
 			assert_eq!(txts[0].name.as_str(), landing, "{} + DNAME {} -> {}", query, owner, target);
+		}
+	}
+
+	#[test]
+	fn check_alias_loops_terminate() {
+		// A zone may legitimately sign a CName cycle or a self-referential DName (RFC 6672
+		// section 2.2 gives the latter as a corner case), and we may be handed one in a proof.
+		let cname_cycle = vec![
+			RR::CName(CName {
+				name: "a.example.com.".try_into().unwrap(),
+				canonical_name: "b.example.com.".try_into().unwrap(),
+			}),
+			RR::CName(CName {
+				name: "b.example.com.".try_into().unwrap(),
+				canonical_name: "a.example.com.".try_into().unwrap(),
+			}),
+		];
+		let self_dname = vec![
+			RR::DName(DName {
+				name: "example.com.".try_into().unwrap(),
+				delegation_name: "example.com.".try_into().unwrap(),
+			}),
+		];
+		for (rrs, query) in [(cname_cycle, "a.example.com."), (self_dname, "cyc.example.com.")] {
+			let stream = VerifiedRRStream {
+				verified_rrs: rrs.iter().collect(),
+				valid_from: 0, expires: u64::MAX, max_cache_ttl: 0,
+			};
+			assert!(stream.resolve_name(&query.try_into().unwrap()).is_empty());
 		}
 	}
 
