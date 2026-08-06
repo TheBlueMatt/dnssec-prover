@@ -22,7 +22,7 @@ use crate::ser::*;
 ///
 /// Note that DNS allows for names to be any arbitrary byte string, but we restrict most instances
 /// to valid host names for practical purposes.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Name(String);
 impl Name {
 	/// Gets the underlying human-readable domain name
@@ -66,6 +66,31 @@ impl Name {
 		}
 		self.as_bytes()[self.len() - suffix.len() - 1] == b'.'
 	}
+}
+impl Ord for Name {
+	fn cmp(&self, o: &Name) -> Ordering {
+		// Name has several several orderings depending on the context. Here we default to sorting
+		// by the wire encoding so that RRs that contain a `Name` are sorted correctly. This is
+		// different from how freestanding `Name`s are sorted in the context of DNSSEC, which is
+		// handled in validation.rs.
+		let mut self_iter = self.0.split('.');
+		let mut o_iter = o.0.split('.');
+		loop {
+			match (self_iter.next(), o_iter.next()) {
+				(None, None) => return Ordering::Equal,
+				(Some(_), None) => return Ordering::Greater,
+				(None, Some(_)) => return Ordering::Less,
+				(Some(a_label), Some(b_label)) => {
+					let label_ord = a_label.len().cmp(&b_label.len())
+						.then_with(|| a_label.cmp(&b_label));
+					if label_ord != Ordering::Equal { return label_ord; }
+				},
+			}
+		}
+	}
+}
+impl PartialOrd for Name {
+	fn partial_cmp(&self, o: &Name) -> Option<Ordering> { Some(self.cmp(o)) }
 }
 impl core::ops::Deref for Name {
 	type Target = str;
@@ -1056,5 +1081,48 @@ impl StaticRecord for NS {
 	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		out.write(&name_len(&self.name_server).to_be_bytes());
 		write_name(out, &self.name_server);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	const NAMES: [&str; 14] = [
+		".",
+		"*.example.com.",
+		"a.example.com.",
+		"z.",
+		"z.a.example.",
+		"aa.",
+		"com.",
+		"ns2.exampl.com.",
+		"ns2.example.com.",
+		"sub.example.com.",
+		"ns10.example.com.",
+		"ns20.example.com.",
+		"example.com.",
+		"xn--e1afmkfd.com.",
+	];
+
+	fn wire_encoding(name: &Name) -> Vec<u8> {
+		let mut res = Vec::new();
+		write_name(&mut res, name);
+		res
+	}
+
+	#[test]
+	fn name_ord_matches_wire_encoding() {
+		for a in NAMES.iter() {
+			for b in NAMES.iter() {
+				let a_name: Name = (*a).try_into().unwrap();
+				let b_name: Name = (*b).try_into().unwrap();
+				let wire_ord = wire_encoding(&a_name).cmp(&wire_encoding(&b_name));
+				assert_eq!(a_name.cmp(&b_name), wire_ord);
+				let a_ns = NS { name: ".".try_into().unwrap(), name_server: a_name};
+				let b_ns = NS { name: ".".try_into().unwrap(), name_server: b_name};
+				assert_eq!(a_ns.cmp(&b_ns), wire_ord);
+			}
+		}
 	}
 }
