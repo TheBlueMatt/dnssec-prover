@@ -437,6 +437,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 						// signed as *.c, we want a proof for nothing being in b.c.
 						// Alternatively, if it was signed as *.b.c, we'd want a proof for
 						// a.b.c.
+						if rrsig.labels == u8::MAX { return Err(ValidationError::Invalid); }
 						let proof_name = rrsig.name.trailing_n_labels(rrsig.labels + 1)
 							.ok_or(ValidationError::Invalid)?;
 						rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name));
