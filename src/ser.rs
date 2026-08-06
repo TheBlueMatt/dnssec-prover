@@ -112,7 +112,9 @@ impl Writer for QueryBuf { fn write(&mut self, buf: &[u8]) { self.extend_from_sl
 #[cfg(feature = "validation")]
 impl Writer for crate::crypto::hash::Hasher { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
 pub(crate) fn write_name<W: Writer>(out: &mut W, name: &str) {
-	let canonical_name = name.to_ascii_lowercase();
+	write_name_without_case_modification(out, &name.to_ascii_lowercase());
+}
+pub(crate) fn write_name_without_case_modification<W: Writer>(out: &mut W, canonical_name: &str) {
 	if canonical_name == "." {
 		out.write(&[0]);
 	} else {

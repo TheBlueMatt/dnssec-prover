@@ -929,7 +929,8 @@ impl StaticRecord for NSec {
 	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = name_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
 		out.write(&len.to_be_bytes());
-		write_name(out, &self.next_name);
+		// RFC 6840 §5.1 mandates this not be lowercased
+		write_name_without_case_modification(out, &self.next_name);
 		write_nsec_types_bitmap(out, &self.types.0);
 	}
 }
