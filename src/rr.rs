@@ -15,10 +15,13 @@ use core::num::NonZeroU8;
 
 use crate::ser::*;
 
-/// A valid domain name.
+/// A valid host name.
 ///
-/// It must end with a ".", be no longer than 255 bytes, consist of only printable ASCII
-/// characters and each label may be no longer than 63 bytes.
+/// It must end with a ".", be no longer than 255 bytes, consist of only the chars a-zA-Z0-9*.-_
+/// and each label may be no longer than 63 bytes.
+///
+/// Note that DNS allows for names to be any arbitrary byte string, but we restrict most instances
+/// to valid host names for practical purposes.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Name(String);
 impl Name {
@@ -79,7 +82,9 @@ impl TryFrom<String> for Name {
 		if s.is_empty() { return Err(()); }
 		if *s.as_bytes().last().unwrap_or(&0) != b"."[0] { return Err(()); }
 		if s.len() > 255 { return Err(()); }
-		if s.chars().any(|c| !c.is_ascii_graphic() || c == '"') { return Err(()); }
+		if s.chars().any(|c| !['-', '.', '_', '*'].contains(&c) && (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z')) {
+			return Err(());
+		}
 		for label in s.split('.') {
 			if label.len() > 63 { return Err(()); }
 		}
