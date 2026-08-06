@@ -465,6 +465,11 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 		let nsec_search = local_zone_nsecs.clone()
 			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None });
 		for nsec in nsec_search {
+			// If the NSEC next_name ends with the next closest name we're looking for we have an
+			// overlap between a real subdomain (or a subdomain of one) and the name we were told
+			// resolved to a wildcard. This is forbidden - if a.b.c.d.e exists, *.e cannot be used
+			// for any of a.b.c.d.e, *.b.c.d.e, *.c.d.e or *.d.e.
+			if nsec.next_name.ends_with_labels(name) { continue; }
 			// Note that the last NSEC in a zone's chain wraps around.
 			let after_start = nsec_ord(&nsec.name, name) == Ordering::Less;
 			let before_end = nsec_ord(&nsec.next_name, name) == Ordering::Greater;
@@ -1599,6 +1604,49 @@ mod tests {
 		assert_eq!(build(vec![RR::NSec(nsec), RR::RRSig(nsec_rrsig)]).unwrap_err(),
 			ValidationError::Invalid);
 	}
+
+	#[test]
+	fn check_nsec_empty_non_terminal_is_not_nonexistence() {
+		// `nested.zent_test.wildcard_test...` exists, which makes `zent_test.wildcard_test...`
+		// an empty non-terminal: it exists, but owns no RRset. RFC 4035 section 2.3 forbids an
+		// NSEC at such a name, so the zone's chain steps straight over it and the NSEC from
+		// `bitcoin_ninja_nsec_post_override_wildcard_record` spans it. That NSEC must not be
+		// read as proof the name is absent - RFC 4592 section 2.2.2 is explicit that empty
+		// non-terminals "exist", and RFC 8198 Appendix B gives the test for spotting one: the
+		// next name is a subdomain of the name in question.
+		//
+		// This is exploitable because an RRSIG's Labels field, not its owner name, decides what
+		// was signed, and the owner name is not part of the signed data. The wildcard TXT's one
+		// signature therefore verifies against any name under `wildcard_test...`, and the only
+		// thing keeping it off names the zone never published it at is the next closer denial.
+		let build = |pfx: &str| {
+			let mut rr_stream = Vec::new();
+			for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_nsec_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			let (txt, txt_rrsig, nsec, nsec_rrsig) =
+				bitcoin_ninja_nsec_post_override_wildcard_record(pfx);
+			for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in [RR::NSec(nsec), RR::RRSig(nsec_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+			let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			verify_rr_stream(&rrs).map(|_| ())
+		};
+
+		// `z.wildcard_test...` is genuinely absent and the same NSEC spans it, so that wildcard
+		// expansion is real and must still validate - the empty non-terminal check must not cost
+		// us legitimate wildcard proofs.
+		build("z").unwrap();
+
+		// `zent_test.wildcard_test...` is the empty non-terminal, so no denial of it is possible
+		// and the RRset must not be accepted below it. Without the check this returns Ok, with
+		// the TXT attributed to a name the zone never published it at.
+		assert_eq!(build("x.zent_test").unwrap_err(), ValidationError::Invalid);
+		// The depth of the forged name below the empty non-terminal is unconstrained.
+		assert_eq!(build("y.x.zent_test").unwrap_err(), ValidationError::Invalid);
+	}
+
 
 	#[test]
 	fn check_txt_sort_order() {
