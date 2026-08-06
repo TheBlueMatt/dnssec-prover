@@ -75,11 +75,11 @@ pub(crate) fn read_nsec_types_bitmap(inp: &mut &[u8]) -> Result<[u8; 8192], ()> 
 	Ok(res)
 }
 
-fn do_read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String, recursion_limit: usize) -> Result<(), ()> {
+fn do_read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut Vec<u8>, recursion_limit: usize) -> Result<(), ()> {
 	loop {
 		let len = read_u8(inp)? as usize;
 		if len == 0 {
-			if name.is_empty() { *name += "."; }
+			if name.is_empty() { name.push(b'.'); }
 			break;
 		} else if len >= 0xc0 && recursion_limit > 0 {
 			let offs = ((len & !0xc0) << 8) | read_u8(inp)? as usize;
@@ -88,22 +88,30 @@ fn do_read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut St
 			break;
 		}
 		if inp.len() <= len { return Err(()); }
-		*name += core::str::from_utf8(&inp[..len]).map_err(|_| ())?;
-		*name += ".";
+		if len > 63 { return Err(()); }
+		name.extend_from_slice(&inp[..len]);
+		name.push(b'.');
 		*inp = &inp[len..];
 		if name.len() > 255 { return Err(()); }
 	}
 	Ok(())
 }
 
-fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut String) -> Result<(), ()> {
+fn read_wire_packet_labels(inp: &mut &[u8], wire_packet: &[u8], name: &mut Vec<u8>) -> Result<(), ()> {
 	do_read_wire_packet_labels(inp, wire_packet, name, 255)
 }
 
-pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Result<Name, ()> {
-	let mut name = String::with_capacity(1024);
+pub(crate) fn read_wire_packet_name_bytes(inp: &mut &[u8], wire_packet: &[u8]) -> Result<Vec<u8>, ()> {
+	let mut name = Vec::with_capacity(1024);
 	read_wire_packet_labels(inp, wire_packet, &mut name)?;
-	name.try_into()
+	if name.len() > 255 { return Err(()); }
+	Ok(name)
+}
+
+pub(crate) fn read_wire_packet_name(inp: &mut &[u8], wire_packet: &[u8]) -> Result<Name, ()> {
+	let mut name = Vec::with_capacity(1024);
+	read_wire_packet_labels(inp, wire_packet, &mut name)?;
+	String::from_utf8(name).map_err(|_| ())?.try_into()
 }
 
 pub(crate) trait Writer { fn write(&mut self, buf: &[u8]); }
@@ -112,24 +120,27 @@ impl Writer for QueryBuf { fn write(&mut self, buf: &[u8]) { self.extend_from_sl
 #[cfg(feature = "validation")]
 impl Writer for crate::crypto::hash::Hasher { fn write(&mut self, buf: &[u8]) { self.update(buf); } }
 pub(crate) fn write_name<W: Writer>(out: &mut W, name: &str) {
-	write_name_without_case_modification(out, &name.to_ascii_lowercase());
+	write_name_without_case_modification(out, &name.to_ascii_lowercase().as_bytes());
 }
-pub(crate) fn write_name_without_case_modification<W: Writer>(out: &mut W, canonical_name: &str) {
-	if canonical_name == "." {
+pub(crate) fn write_name_without_case_modification<W: Writer>(out: &mut W, name_bytes: &[u8]) {
+	if name_bytes == b"." {
 		out.write(&[0]);
 	} else {
-		for label in canonical_name.split('.') {
+		for label in name_bytes.split(|c| *c == b'.') {
 			out.write(&(label.len() as u8).to_be_bytes());
-			out.write(label.as_bytes());
+			out.write(label);
 		}
 	}
 }
 pub(crate) fn name_len(name: &Name) -> u16 {
-	if name.as_str() == "." {
+	name_bytes_len(name.as_str().as_bytes())
+}
+pub(crate) fn name_bytes_len(name: &[u8]) -> u16 {
+	if name == b"." {
 		1
 	} else {
 		let mut res = 0;
-		for label in name.split('.') {
+		for label in name.split(|c| *c == b'.') {
 			res += 1 + label.len();
 		}
 		res as u16

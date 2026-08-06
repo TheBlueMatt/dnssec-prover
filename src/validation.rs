@@ -281,16 +281,16 @@ fn resolve_time(time: u32) -> u64 {
 	}
 }
 
-fn nsec_ord(a: &str, b: &str) -> Ordering {
-	let mut a_label_iter = a.rsplit('.');
-	let mut b_label_iter = b.rsplit('.');
+fn nsec_ord(a: &[u8], b: &[u8]) -> Ordering {
+	let mut a_label_iter = a.rsplit(|c| *c == b'.');
+	let mut b_label_iter = b.rsplit(|c| *c == b'.');
 	loop {
 		match (a_label_iter.next(), b_label_iter.next()) {
 			(Some(_), None) => return Ordering::Greater,
 			(None, Some(_)) => return Ordering::Less,
 			(Some(a_label), Some(b_label)) => {
-				let mut a_bytes = a_label.bytes();
-				let mut b_bytes = b_label.bytes();
+				let mut a_bytes = a_label.iter().copied();
+				let mut b_bytes = b_label.iter().copied();
 				loop {
 					match (a_bytes.next(), b_bytes.next()) {
 						(Some(_), None) => return Ordering::Greater,
@@ -313,18 +313,18 @@ fn nsec_ord(a: &str, b: &str) -> Ordering {
 	}
 }
 fn nsec_ord_extra<T>(a: &(&str, T), b: &(&str, T)) -> Ordering {
-	nsec_ord(a.0, b.0)
+	nsec_ord(a.0.as_bytes(), b.0.as_bytes())
 }
 
 #[cfg(test)]
 #[test]
 fn rfc4034_sort_test() {
 	// Test nsec_ord based on RFC 4034 section 6.1's example
-	// Note that we replace the \200 example  with \7f as I have no idea what \200 is
-	let v = vec!["example.", "a.example.", "yljkjljk.a.example.", "Z.a.example.",
-		"zABC.a.EXAMPLE.", "z.example.", "\001.z.example.", "*.z.example.", "\x7f.z.example."];
+	let v = vec![&b"example."[..], &b"a.example."[..], &b"yljkjljk.a.example."[..],
+		&b"Z.a.example."[..], &b"zABC.a.EXAMPLE."[..], &b"z.example."[..],
+		&b"\001.z.example."[..], &b"*.z.example."[..], &b"\xc8.z.example."[..]];
 	let mut sorted = v.clone();
-	sorted.sort_unstable_by(|a, b| nsec_ord(*a, *b));
+	sorted.sort_unstable_by(|a, b| nsec_ord(a, b));
 	assert_eq!(sorted, v);
 }
 
@@ -470,11 +470,11 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 			// overlap between a real subdomain (or a subdomain of one) and the name we were told
 			// resolved to a wildcard. This is forbidden - if a.b.c.d.e exists, *.e cannot be used
 			// for any of a.b.c.d.e, *.b.c.d.e, *.c.d.e or *.d.e.
-			if nsec.next_name.ends_with_labels(name) { continue; }
+			if name_ends_with_labels(&nsec.next_name, name) { continue; }
 			// Note that the last NSEC in a zone's chain wraps around.
-			let after_start = nsec_ord(&nsec.name, name) == Ordering::Less;
-			let before_end = nsec_ord(&nsec.next_name, name) == Ordering::Greater;
-			let name_contained = if nsec_ord(&nsec.name, &nsec.next_name) == Ordering::Less {
+			let after_start = nsec_ord(nsec.name.as_bytes(), name.as_bytes()) == Ordering::Less;
+			let before_end = nsec_ord(&nsec.next_name, name.as_bytes()) == Ordering::Greater;
+			let name_contained = if nsec_ord(nsec.name.as_bytes(), &nsec.next_name) == Ordering::Less {
 				after_start && before_end
 			} else {
 				after_start || before_end
@@ -762,6 +762,51 @@ mod tests {
 			signature: base64::decode("u1Sl6uNJvSZcxoEsew6/MM7GI8smdPkuDSS26t8tEiFece6d8ezI6wcalSbkLKObXeUmdbW5lHZjnBKkUck3MA==").unwrap(),
 		};
 		(txts, txt_rrsig)
+	}
+
+	fn cloudflare_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
+		let com_dnskeys = com_dnskey().0;
+		let mut cloudflare_ds = vec![DS {
+			name: "cloudflare.com.".try_into().unwrap(), key_tag: 2371, alg: 13, digest_type: 2,
+			digest: Vec::from_hex("32996839A6D808AFE3EB4A795A0E6A7A39A76FC52FF228B22B76F6D63826F2B9").unwrap(),
+		}];
+		let ds_rrsig = RRSig {
+			name: "cloudflare.com.".try_into().unwrap(), ty: DS::TYPE, alg: 13, labels: 2, orig_ttl: 86400,
+			expiration: 1786582833, inception: 1785973833, key_tag: 41446, key_name: "com.".try_into().unwrap(),
+			signature: base64::decode("bj58c8zJI4N/l6M0CzR5/ANQTZBlUAzuxeBcz1Nt4M2B2UPM3LoYXQ8ASYZli5caWIkVq2B2kHs0N3dxmu2sUg==").unwrap(),
+		};
+		verify_rrsig(&ds_rrsig, &com_dnskeys, cloudflare_ds.iter().collect()).unwrap();
+		let dnskeys = vec![DnsKey {
+			name: "cloudflare.com.".try_into().unwrap(), flags: 256, protocol: 3, alg: 13,
+			pubkey: base64::decode("oJMRESz5E4gYzS/q6XDrvU1qMPYIjCWzJaOau8XNEZeqCYKD5ar0IRd8KqXXFJkqmVfRvMGPmM1x8fGAa2XhSA==").unwrap(),
+		}, DnsKey {
+			name: "cloudflare.com.".try_into().unwrap(), flags: 257, protocol: 3, alg: 13,
+			pubkey: base64::decode("mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==").unwrap(),
+		}];
+		let dnskey_rrsig = RRSig {
+			name: "cloudflare.com.".try_into().unwrap(), ty: DnsKey::TYPE, alg: 13, labels: 2, orig_ttl: 3600,
+			expiration: 1790916935, inception: 1785646535, key_tag: 2371, key_name: "cloudflare.com.".try_into().unwrap(),
+			signature: base64::decode("14eL8GoAJFkezWYWQr6pcVSq55HRaaykMGstMqOW1bHXDb3Ll0gYj79po1sBCvqUAFEYXZmIBVcYfSytQ63MPw==").unwrap(),
+		};
+		verify_dnskeys([&dnskey_rrsig], &cloudflare_ds, dnskeys.iter().collect()).unwrap();
+		let rrs = vec![cloudflare_ds.pop().unwrap().into(), ds_rrsig.into(),
+			dnskeys[0].clone().into(), dnskeys[1].clone().into(), dnskey_rrsig.into()];
+		(dnskeys, rrs)
+	}
+
+	fn cloudflare_online_signed_nsec() -> (NSec, RRSig) {
+		let nsec = NSec {
+			name: "online_signing_test.cloudflare.com.".try_into().unwrap(),
+			next_name: b"\x00.online_signing_test.cloudflare.com.".to_vec(),
+			types: NSecTypeMask::from_types(&[RRSig::TYPE, NSec::TYPE, 128]),
+		};
+		let nsec_rrsig = RRSig {
+			name: "online_signing_test.cloudflare.com.".try_into().unwrap(),
+			ty: NSec::TYPE, alg: 13, labels: 3, orig_ttl: 300, expiration: 1786137946,
+			inception: 1785957946, key_tag: 34505, key_name: "cloudflare.com.".try_into().unwrap(),
+			signature: base64::decode("wUIukIrWxEzb0SJOTEC7Kg7e/SbDzIIGZMWfOS7/IpToUYGuJj1Io13ufs5shP4MnfAAWxrfFLa6asyurF0OFg==").unwrap(),
+		};
+		(nsec, nsec_rrsig)
 	}
 
 	fn bitcoin_ninja_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
@@ -1536,6 +1581,25 @@ mod tests {
 		check_proof("z", true).unwrap();
 		check_proof("a.z", false).unwrap_err();
 		check_proof("a.z", true).unwrap();
+	}
+
+	#[test]
+	fn check_online_signed_nsec_next_name() {
+		let dnskeys = cloudflare_dnskey().0;
+		let (nsec, nsec_rrsig) = cloudflare_online_signed_nsec();
+		assert_eq!(&nsec.next_name[..], b"\x00.online_signing_test.cloudflare.com.");
+
+		// Check that the RR with a `\000` label survives round-trip
+		let mut rr_stream = Vec::new();
+		write_rr(&nsec, 300, &mut rr_stream);
+		assert_eq!(parse_rr_stream(&rr_stream).unwrap(), vec![RR::NSec(nsec.clone())]);
+
+		verify_rrsig(&nsec_rrsig, &dnskeys, vec![&nsec]).unwrap();
+
+		assert_eq!(StaticRecord::json(&nsec), "{\"type\":\"nsec\",\
+			\"name\":\"online_signing_test.cloudflare.com.\",\
+			\"next_name\":\"\\u0000.online_signing_test.cloudflare.com.\",\
+			\"types\":[\"NSEC\",\"RRSIG\",128]}");
 	}
 
 	#[test]

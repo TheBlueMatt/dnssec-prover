@@ -15,6 +15,22 @@ use core::num::NonZeroU8;
 
 use crate::ser::*;
 
+pub(crate) fn name_ends_with_labels(name: &[u8], suffix: &str) -> bool {
+	if name.len() < suffix.len() { return false; }
+	if name.ends_with(b".") && suffix == "." { return true; }
+
+	let suffix_lowercase_bytes = suffix.bytes().map(|b| b.to_ascii_lowercase());
+	let name_suffix_lowercase =
+		name.iter().skip(name.len() - suffix.len()).map(|b| b.to_ascii_lowercase());
+	if !name_suffix_lowercase.eq(suffix_lowercase_bytes) {
+		return false;
+	}
+	if name.len() == suffix.len() {
+		return true;
+	}
+	name[name.len() - suffix.len() - 1] == b'.'
+}
+
 /// A valid host name.
 ///
 /// It must end with a ".", be no longer than 255 bytes, consist of only the chars a-zA-Z0-9*.-_
@@ -53,18 +69,7 @@ impl Name {
 	/// This is similar to `str::ends_with` but validates that the suffix is in terms of labels,
 	/// rather than raw characters.
 	pub fn ends_with_labels<N: core::ops::Deref<Target = str>>(&self, suffix: N) -> bool {
-		if self.0.len() < suffix.len() { return false; }
-		if self.0.ends_with(".") && &*suffix == "." { return true; }
-		let suffix_lowercase_bytes = suffix.bytes().map(|b| b.to_ascii_lowercase());
-		let name_suffix_lowercase =
-			self.bytes().skip(self.len() - suffix.len()).map(|b| b.to_ascii_lowercase());
-		if !name_suffix_lowercase.eq(suffix_lowercase_bytes) {
-			return false;
-		}
-		if self.len() == suffix.len() {
-			return true;
-		}
-		self.as_bytes()[self.len() - suffix.len() - 1] == b'.'
+		name_ends_with_labels(self.0.as_bytes(), &*suffix)
 	}
 }
 impl Ord for Name {
@@ -900,7 +905,10 @@ pub struct NSec {
 	pub name: Name,
 	/// The next name which contains a record. There are no names between `name` and
 	/// [`Self::next_name`].
-	pub next_name: Name,
+	///
+	/// Note that unlike `name`, it isn't uncommon for this to contain null bytes (for online
+	/// signing).
+	pub next_name: Vec<u8>,
 	/// The set of record types which exist at `name`. Any other record types do not exist at
 	/// `name`.
 	pub types: NSecTypeMask,
@@ -910,24 +918,34 @@ impl StaticRecord for NSec {
 	fn name(&self) -> &Name { &self.name }
 	fn json(&self) -> String {
 		let mut out = String::with_capacity(256 + self.next_name.len());
-		write!(&mut out,
-			"{{\"type\":\"nsec\",\"name\":\"{}\",\"next_name\":\"{}\",\"types\":",
-			self.name.0, self.next_name.0,
-		).expect("Write to a String shouldn't fail");
+		write!(&mut out, "{{\"type\":\"nsec\",\"name\":\"{}\",\"next_name\":\"", self.name.0)
+			.expect("Write to a String shouldn't fail");
+		for c in self.next_name.iter() {
+			if *c >= 0x20 && *c <= 0x7e {
+				if *c == b'"' || *c == b'\\' {
+					out.push('\\');
+				}
+				out.push(char::from_u32((*c).into()).unwrap());
+			} else {
+				out += "\\u";
+				write!(&mut out, "00{:02x}", *c).expect("Write to a String shouldn't fail");
+			}
+		}
+		out += "\",\"types\":";
 		self.types.write_json(&mut out);
 		out += "}";
 		out
 	}
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		let res = NSec {
-			name, next_name: read_wire_packet_name(&mut data, wire_packet)?,
+			name, next_name: read_wire_packet_name_bytes(&mut data, wire_packet)?,
 			types: NSecTypeMask(read_nsec_types_bitmap(&mut data)?),
 		};
 		debug_assert!(data.is_empty());
 		Ok(res)
 	}
 	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
-		let len = name_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
+		let len = name_bytes_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
 		out.write(&len.to_be_bytes());
 		// RFC 6840 §5.1 mandates this not be lowercased
 		write_name_without_case_modification(out, &self.next_name);
