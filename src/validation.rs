@@ -45,10 +45,9 @@ pub fn root_hints() -> Vec<DS> {
 pub enum ValidationError {
 	/// An algorithm used in signing was not supported.
 	///
-	/// In general DNS usage the resulting data should be used anyway, as we were able to verify
-	/// that a zone wished to use the unsupported algorithm.
+	/// While data was provided, it couldn't be authenticated and may be forged.
 	///
-	/// However, in cases where signing is mandatory, this can be treated as an error.
+	/// In cases where signing is mandatory, this can be treated as an error.
 	UnsupportedAlgorithm,
 	/// The provided data was invalid or signatures did not validate.
 	Invalid,
