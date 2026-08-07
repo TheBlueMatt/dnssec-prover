@@ -310,7 +310,7 @@ fn nsec_ord(a: &str, b: &str) -> Ordering {
 		}
 	}
 }
-fn nsec_ord_extra<T, U>(a: &(&str, T, U), b: &(&str, T, U)) -> Ordering {
+fn nsec_ord_extra<T>(a: &(&str, T), b: &(&str, T)) -> Ordering {
 	nsec_ord(a.0, b.0)
 }
 
@@ -433,7 +433,7 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 						// a.b.c.
 						let proof_name = rrsig.name.trailing_n_labels(rrsig.labels + 1)
 							.ok_or(ValidationError::Invalid)?;
-						rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name, rrsig.ty));
+						rrs_needing_non_existence_proofs.push((proof_name, &rrsig.key_name));
 					}
 					for record in signed_records {
 						if !res.contains(&record) { res.push(record); }
@@ -448,17 +448,21 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 
 	// First sort the proofs we're looking for so that the retains below avoid shifting.
 	rrs_needing_non_existence_proofs.sort_unstable_by(nsec_ord_extra);
-	'proof_search_loop: while let Some((name, zone, ty)) = rrs_needing_non_existence_proofs.pop() {
+	'proof_search_loop: while let Some((name, zone)) = rrs_needing_non_existence_proofs.pop() {
 		let nsec_search = res.iter()
 			.filter_map(|rr| if let RR::NSec(nsec) = rr { Some(nsec) } else { None })
 			.filter(|nsec| nsec.name.ends_with(zone.as_str()));
 		for nsec in nsec_search {
-			let name_matches = nsec.name.as_str() == name;
-			let name_contained = nsec_ord(&nsec.name,  name) != Ordering::Greater &&
-				nsec_ord(&nsec.next_name, name) == Ordering::Greater;
-			if (name_matches && !nsec.types.contains_type(ty)) || name_contained {
-				rrs_needing_non_existence_proofs
-					.retain(|(n, _, t)| *n != name || (name_matches && nsec.types.contains_type(*t)));
+			// Note that the last NSEC in a zone's chain wraps around.
+			let after_start = nsec_ord(&nsec.name, name) == Ordering::Less;
+			let before_end = nsec_ord(&nsec.next_name, name) == Ordering::Greater;
+			let name_contained = if nsec_ord(&nsec.name, &nsec.next_name) == Ordering::Less {
+				after_start && before_end
+			} else {
+				after_start || before_end
+			};
+			if name_contained {
+				rrs_needing_non_existence_proofs.retain(|(n, _)| *n != name);
 				continue 'proof_search_loop;
 			}
 		}
@@ -517,12 +521,16 @@ pub fn verify_rr_stream<'a>(inp: &'a [RR]) -> Result<VerifiedRRStream<'a>, Valid
 			} else { continue };
 			if start_hash.len() != 20 || nsec3.next_name_hash.len() != 20 { continue; }
 
-			let hash_matches = &start_hash[..] == name_hash.as_ref();
-			let hash_contained =
-				&start_hash[..] <= name_hash.as_ref() && &nsec3.next_name_hash[..] > name_hash.as_ref();
-			if (hash_matches && !nsec3.types.contains_type(ty)) || hash_contained {
-				rrs_needing_non_existence_proofs
-					.retain(|(n, _, t)| *n != name || (hash_matches && nsec3.types.contains_type(*t)));
+			// Note that the last NSEC3 in a zone's chain wraps around.
+			let after_start = &start_hash[..] < name_hash.as_ref();
+			let before_end = &nsec3.next_name_hash[..] > name_hash.as_ref();
+			let hash_contained = if start_hash[..] < nsec3.next_name_hash[..] {
+				after_start && before_end
+			} else {
+				after_start || before_end
+			};
+			if hash_contained {
+				rrs_needing_non_existence_proofs.retain(|(n, _)| *n != name);
 				continue 'proof_search_loop;
 			}
 		}
@@ -1195,9 +1203,9 @@ mod tests {
 		check_proof("b.override", false).unwrap_err();
 		check_proof("b.override", true).unwrap_err();
 		check_proof("z", false).unwrap_err();
-		check_proof("z", true).unwrap_err();
+		check_proof("z", true).unwrap();
 		check_proof("a.z", false).unwrap_err();
-		check_proof("a.z", true).unwrap_err();
+		check_proof("a.z", true).unwrap();
 	}
 
 	#[test]
