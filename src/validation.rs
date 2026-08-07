@@ -896,6 +896,96 @@ mod tests {
 			[(nsec3_a, nsec3_a_rrsig), (nsec3_b, nsec3_b_rrsig)])
 	}
 
+	fn bitcoin_ninja_x_domain_cname_wildcard_record() -> (CName, RRSig, NSec3, RRSig) {
+		let name = "wildcard.x_domain_cname_wild.dnssec_proof_tests.bitcoin.ninja.";
+		let cname = CName {
+			name: name.try_into().unwrap(),
+			canonical_name: "matt.user._bitcoin-payment.mattcorallo.com.".try_into().unwrap(),
+		};
+		let cname_rrsig = RRSig {
+			name: name.try_into().unwrap(), ty: CName::TYPE, alg: 13, labels: 4, orig_ttl: 30,
+			expiration: 1786663415, inception: 1785448415, key_tag: 62306,
+			key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("HN8yF2eG5pUMWdUHBXK1PoUSTsCvJ89PrdvRIaTpOfdonxWUB4Mw093TefbGfXAWJYmLRRW4jd0B7LPIc3Jv7A==").unwrap(),
+		};
+		let nsec3 = NSec3 {
+			name: "vpbup1es8cqpj16tgtgtas6fifbu8u73.bitcoin.ninja.".try_into().unwrap(),
+			hash_algo: 1, flags: 0, hash_iterations: 0,
+			salt: Vec::from_hex("180E9D1B9F24BAD7").unwrap(),
+			next_name_hash: Vec::from_hex("02417EDCE26669601E9407D9B0A0E3AB1741B8E8").unwrap(),
+			types: NSecTypeMask::from_types(&[33, RRSig::TYPE]),
+		};
+		let nsec3_rrsig = RRSig {
+			name: "vpbup1es8cqpj16tgtgtas6fifbu8u73.bitcoin.ninja.".try_into().unwrap(),
+			ty: NSec3::TYPE, alg: 13, labels: 3, orig_ttl: 60,
+			expiration: 1786974157, inception: 1785759157, key_tag: 62306,
+			key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("F3GPW+yCZjHy8VA6BMhlH01ZyDHf94dD1r5bTN+AWDuDw2bPsCtVbrzvS0gNenxKBtOgg9kE3+WYiZkrGhaM5A==").unwrap(),
+		};
+		(cname, cname_rrsig, nsec3, nsec3_rrsig)
+	}
+
+	fn bitcoin_ninja_cname_target_wildcard_record() -> (Txt, RRSig, NSec3, RRSig) {
+		let name = "cname.wildcard_test.dnssec_proof_tests.bitcoin.ninja.";
+		let txt = Txt {
+			name: name.try_into().unwrap(),
+			data: "wildcard_test".try_into().unwrap(),
+		};
+		let txt_rrsig = RRSig {
+			name: name.try_into().unwrap(), ty: Txt::TYPE, alg: 13, labels: 4, orig_ttl: 30,
+			expiration: 1786663415, inception: 1785448415, key_tag: 62306,
+			key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("NvmdgkpvkZvnAOZbW9+XwJmV8HqMqreTKsLmrtC0q5GJI/26Z7u8PG3/hjPtEd5wShFfTd1xD3FYywOwkp682Q==").unwrap(),
+		};
+		let nsec3 = NSec3 {
+			name: "k0k9mke3fif9p0oq11707a2oe440utb4.bitcoin.ninja.".try_into().unwrap(),
+			hash_algo: 1, flags: 0, hash_iterations: 0,
+			salt: Vec::from_hex("180E9D1B9F24BAD7").unwrap(),
+			next_name_hash: Vec::from_hex("A62CCD9A3F946729008413B647E0E191E7713009").unwrap(),
+			types: NSecTypeMask::from_types(&[Txt::TYPE, RRSig::TYPE]),
+		};
+		let nsec3_rrsig = RRSig {
+			name: "k0k9mke3fif9p0oq11707a2oe440utb4.bitcoin.ninja.".try_into().unwrap(),
+			ty: NSec3::TYPE, alg: 13, labels: 3, orig_ttl: 60, expiration: 1786987366,
+			inception: 1785772366, key_tag: 62306, key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("WhCMAfJ1hZ+QsOXhbbwKpBk9VhsZdfYhjUMXcQHLDolrmj3SETPPAkMiGtm2oBdPXZeWrhpPEmNFnpquEgI3Fg==").unwrap(),
+		};
+		(txt, txt_rrsig, nsec3, nsec3_rrsig)
+	}
+
+	/// The NSEC3 matching `override.wildcard_test.dnssec_proof_tests.bitcoin.ninja.`.
+	///
+	/// Takes the `bitcoin.ninja.` keys so that we can check the zone really did sign this.
+	fn bitcoin_ninja_override_matching_nsec3(dnskeys: &[&DnsKey]) -> (NSec3, RRSig) {
+		let overridden = "override.wildcard_test.dnssec_proof_tests.bitcoin.ninja.";
+		let nsec3 = NSec3 {
+			name: "i35lj8ddq83urbvibgi143qtdiu5kqlp.bitcoin.ninja.".try_into().unwrap(),
+			hash_algo: 1, flags: 0, hash_iterations: 0,
+			salt: Vec::from_hex("180E9D1B9F24BAD7").unwrap(),
+			next_name_hash: crate::base32::decode("JO06SMGEHDFJ0I3MNHB1HMMNATA3TPIP").unwrap(),
+			types: NSecTypeMask::from_types(&[Txt::TYPE, RRSig::TYPE]),
+		};
+		let nsec3_rrsig = RRSig {
+			name: "i35lj8ddq83urbvibgi143qtdiu5kqlp.bitcoin.ninja.".try_into().unwrap(),
+			ty: NSec3::TYPE, alg: 13, labels: 3, orig_ttl: 60,
+			expiration: 1786987366, inception: 1785772366, key_tag: 62306,
+			key_name: "bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("fYjOjpA3JKI1AlVmpmDemxzGxksQ2t3k2ChO0YCNVkp1Z1tvc91pb2SIBC/AZak4Do4qNl7OK9SkFa4otkU4jQ==").unwrap(),
+		};
+		verify_rrsig(&nsec3_rrsig, dnskeys.iter().copied(), vec![&nsec3]).unwrap();
+
+		let mut hasher = crypto::hash::Hasher::sha1();
+		write_name(&mut hasher, overridden);
+		hasher.update(&nsec3.salt);
+		let (owner_hash_base32, _) = nsec3.name.split_once('.').unwrap();
+		assert_eq!(&base32::decode(owner_hash_base32).unwrap()[..], hasher.finish().as_ref(),
+			"NSEC3 no longer matches the name it is supposed to match");
+		assert!(nsec3.types.contains_type(Txt::TYPE),
+			"NSEC3 must list TXT as present, else it proves absence by bitmap instead");
+
+		(nsec3, nsec3_rrsig)
+	}
+
 	fn bitcoin_ninja_nsec_dnskey() -> (Vec<DnsKey>, Vec<RR>) {
 		let bitcoin_ninja_dnskeys = bitcoin_ninja_dnskey().0;
 		let mut bitcoin_ninja_ds = vec![DS {
@@ -994,6 +1084,32 @@ mod tests {
 			ty: NSec::TYPE, alg: 13, labels: 6, orig_ttl: 60, expiration: 1787232803,
 			inception: 1786017803, key_tag: 37278, key_name: "nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
 			signature: base64::decode("FFmyd7Bmq8hmFmZOyNMfvJkCpdU9po4ogA41xUw+nZNLvtad/CN/7p9nJTcHTvmp0UEyg5t2K9yV9KhNRlaASg==").unwrap(),
+		};
+		(txt_resp, txt_rrsig, nsec, nsec_rrsig)
+	}
+
+	fn bitcoin_ninja_nsec_wraparound_wildcard_record(pfx: &str) -> (Txt, RRSig, NSec, RRSig) {
+		let name: Name = (pfx.to_owned() + ".wildcard_test.nsec_tests.dnssec_proof_tests.bitcoin.ninja.").try_into().unwrap();
+		let txt_resp = Txt {
+			name: name.clone(),
+			data: "wildcard_test".try_into().unwrap(),
+		};
+		let txt_rrsig = RRSig {
+			name: name.clone(),
+			ty: Txt::TYPE, alg: 13, labels: 5, orig_ttl: 30, expiration: 1787000213,
+			inception: 1785785213, key_tag: 37278, key_name: "nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("5+BP2xI1BraLWhRS6RED4Ji8SlbK0rO0OpnrDohCpwQpd8HTPzhznOXZwfptN+GGruHJ1jHDmPsvWINf9n5tUg==").unwrap(),
+		};
+		let nsec = NSec {
+			name: "nested.zent_test.wildcard_test.nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			next_name: "nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			types: NSecTypeMask::from_types(&[Txt::TYPE, RRSig::TYPE, NSec::TYPE]),
+		};
+		let nsec_rrsig = RRSig {
+			name: "nested.zent_test.wildcard_test.nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			ty: NSec::TYPE, alg: 13, labels: 7, orig_ttl: 60, expiration: 1787232803,
+			inception: 1786017803, key_tag: 37278, key_name: "nsec_tests.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap(),
+			signature: base64::decode("y11K2pyk6NVCbXtdI4fFt8J9ox1kFUnpjMn8kocY3HYuU1eNdpPvOkEmVRmXyULDvgsksRdJ4yYqmrkeMQx9Lw==").unwrap(),
 		};
 		(txt_resp, txt_rrsig, nsec, nsec_rrsig)
 	}
@@ -1225,6 +1341,41 @@ mod tests {
 	}
 
 	#[test]
+	fn check_nsec_wraparound_wildcard_proof() {
+		let check_proof = |pfx: &str| -> Result<(), ()> {
+			let mut rr_stream = Vec::new();
+			for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in bitcoin_ninja_nsec_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+			let (txt, txt_rrsig, nsec, nsec_rrsig) =
+				bitcoin_ninja_nsec_wraparound_wildcard_record(pfx);
+			for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+			for rr in [RR::NSec(nsec), RR::RRSig(nsec_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+			let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+			rrs.shuffle(&mut rand::rngs::OsRng);
+			let verified_rrs = verify_rr_stream(&rrs).map_err(|_| ())?;
+			let name: Name =
+				(pfx.to_owned() + ".wildcard_test.nsec_tests.dnssec_proof_tests.bitcoin.ninja.").try_into().unwrap();
+			let filtered_rrs = verified_rrs.resolve_name(&name);
+			assert_eq!(filtered_rrs.len(), 1);
+			if let RR::Txt(txt) = &filtered_rrs[0] {
+				assert_eq!(txt.name, name);
+				assert_eq!(txt.data.as_vec(), b"wildcard_test");
+			} else { panic!(); }
+			Ok(())
+		};
+
+		// `zz` sorts after `zent_test` (the last record) so sits in the wraparound NSEC.
+		check_proof("zz").unwrap();
+		check_proof("a.zz").unwrap();
+		// `a` sorts after the zone apex record, so is past the wraparound NSEC.
+		check_proof("a").unwrap_err();
+		check_proof("nested.zent_test").unwrap_err();
+	}
+
+	#[test]
 	fn check_txt_sort_order() {
 		let mut rr_stream = Vec::new();
 		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
@@ -1262,4 +1413,105 @@ let rfc9102_test_vector = Vec::from_hex("045f343433045f74637003777777076578616d7
 			assert_eq!(tlsa.data, Vec::from_hex("8bd1da95272f7fa4ffb24137fc0ed03aae67e5c4d8b3c50734e1050a7920b922").unwrap());
 		} else { panic!(); }
 	}
+
+	#[test]
+	fn check_nsec3_wraparound_wildcard_proof() {
+		// A wildcard-generated CNAME whose "next closer" name hashes *above* the highest hash in
+		// bitcoin.ninja's NSEC3 chain. It is therefore covered by the chain's last NSEC3, whose
+		// `next_name_hash` wraps back around to the zone's lowest hash (RFC 5155 section 3.1.7).
+		// We used to reject such proofs, only accepting non-wrapping [start, next) ranges.
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in com_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in mattcorallo_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (cname, cname_rrsig, nsec3, nsec3_rrsig) = bitcoin_ninja_x_domain_cname_wildcard_record();
+		for rr in [RR::CName(cname), RR::RRSig(cname_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in [RR::NSec3(nsec3), RR::RRSig(nsec3_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		let (txts, txt_rrsig) = mattcorallo_txt_record();
+		for txt in txts { write_rr(&txt, 1, &mut rr_stream); }
+		write_rr(&txt_rrsig, 1, &mut rr_stream);
+
+		let mut rrs = parse_rr_stream(&rr_stream).unwrap();
+
+		// Ensure the fixture still actually exercises the wrap-around, in case it is regenerated.
+		let mut wrapping_nsec3s = 0;
+		for nsec3 in rrs.iter().filter_map(|rr| if let RR::NSec3(n) = rr { Some(n) } else { None }) {
+			let (start_hash_base32, _) = nsec3.name.split_once('.').unwrap();
+			let start_hash = crate::base32::decode(start_hash_base32).unwrap();
+			if start_hash[..] > nsec3.next_name_hash[..] { wrapping_nsec3s += 1; }
+		}
+		assert_eq!(wrapping_nsec3s, 1, "fixture no longer covers the NSEC3 wrap-around case");
+
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		let verified_rrs = verify_rr_stream(&rrs).unwrap();
+
+		let name = "wildcard.x_domain_cname_wild.dnssec_proof_tests.bitcoin.ninja.";
+		let filtered_rrs = verified_rrs.resolve_name(&name.try_into().unwrap());
+		assert!(filtered_rrs.iter().any(|rr| if let RR::Txt(txt) = rr {
+			txt.name.as_str() == "matt.user._bitcoin-payment.mattcorallo.com."
+				&& txt.data.as_vec().starts_with(b"bitcoin:")
+		} else { false }));
+	}
+
+	#[test]
+	fn check_nsec3_matching_name_does_not_cover_it() {
+		// An NSEC3 whose owner hash *matches* the name we want a non-existence proof for shows
+		// that the name exists, so it must not be treated as covering that name. Otherwise a
+		// wildcard-signed RRSet could be substituted for the real records at an existing name.
+		let mut rr_stream = Vec::new();
+		for rr in root_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in bitcoin_ninja_dnskey().1 { write_rr(&rr, 1, &mut rr_stream); }
+		let (txt, txt_rrsig, nsec3, nsec3_rrsig) = bitcoin_ninja_cname_target_wildcard_record();
+		for rr in [RR::Txt(txt), RR::RRSig(txt_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+		for rr in [RR::NSec3(nsec3), RR::RRSig(nsec3_rrsig)] { write_rr(&rr, 1, &mut rr_stream); }
+
+		// As built, this is a perfectly good wildcard proof - which also confirms the whole
+		// chain and all the signature validity windows line up.
+		let rrs = parse_rr_stream(&rr_stream).unwrap();
+		verify_rr_stream(&rrs).unwrap();
+
+		// Now relabel the wildcard-signed TXT onto `override.wildcard_test...`, which really
+		// exists in the zone, and supply only the NSEC3 matching that name.
+		let overridden: Name =
+			"override.wildcard_test.dnssec_proof_tests.bitcoin.ninja.".try_into().unwrap();
+		let mut rrs: Vec<RR> = rrs.into_iter()
+			.filter(|rr| rr.ty() != NSec3::TYPE)
+			.filter(|rr| !matches!(rr, RR::RRSig(sig) if sig.ty == NSec3::TYPE))
+			.map(|rr| match rr {
+				RR::Txt(mut txt) => { txt.name = overridden.clone(); RR::Txt(txt) },
+				RR::RRSig(mut sig) if sig.ty == Txt::TYPE => {
+					sig.name = overridden.clone();
+					RR::RRSig(sig)
+				},
+				rr => rr,
+			})
+			.collect();
+
+		// The relabelled records still carry a valid wildcard signature, so any rejection below
+		// has to come from the NSEC3 handling rather than from a broken signature.
+		let dnskeys = rrs.iter()
+			.filter_map(|rr| if let RR::DnsKey(k) = rr { Some(k) } else { None })
+			.filter(|k| k.name.as_str() == "bitcoin.ninja.")
+			.collect::<Vec<_>>();
+		let txt = rrs.iter()
+			.find_map(|rr| if let RR::Txt(txt) = rr { Some(txt) } else { None }).unwrap();
+		let txt_rrsig = rrs.iter()
+			.find_map(|rr| if let RR::RRSig(sig) = rr {
+				if sig.ty == Txt::TYPE { Some(sig) } else { None }
+			} else { None }).unwrap();
+		assert_eq!(txt.name, overridden);
+		verify_rrsig(txt_rrsig, dnskeys.iter().copied(), vec![txt]).unwrap();
+
+		// Likewise, this NSEC3 is genuinely signed by the zone and genuinely matches the name, so
+		// the rejection below can only come from it matching rather than covering.
+		let (nsec3, nsec3_rrsig) = bitcoin_ninja_override_matching_nsec3(&dnskeys);
+		rrs.push(RR::NSec3(nsec3));
+		rrs.push(RR::RRSig(nsec3_rrsig));
+		rrs.shuffle(&mut rand::rngs::OsRng);
+		assert_eq!(verify_rr_stream(&rrs).unwrap_err(), ValidationError::Invalid);
+	}
+
 }
