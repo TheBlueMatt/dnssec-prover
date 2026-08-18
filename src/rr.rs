@@ -3,6 +3,7 @@
 //!
 //! This module holds structs and utilities for the Resource Records supported by this crate.
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::borrow::ToOwned;
@@ -848,17 +849,17 @@ impl StaticRecord for RRSig {
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 /// A mask used in [`NSec`] and [`NSec3`] records which indicates the resource record types which
 /// exist at the (hash of the) name described in [`Record::name`].
-pub struct NSecTypeMask([u8; 8192]);
+pub struct NSecTypeMask(Box<[u8; 8192]>);
 impl NSecTypeMask {
 	/// Constructs a new, empty, type mask.
-	pub fn new() -> Self { Self([0; 8192]) }
+	pub fn new() -> Self { Self(Box::new([0; 8192])) }
 	/// Builds a new type mask with the given types set
 	pub fn from_types(types: &[u16]) -> Self {
 		let mut flags = [0; 8192];
 		for t in types {
 			flags[*t as usize >> 3] |= 1 << (7 - (*t as usize % 8));
 		}
-		let res = Self(flags);
+		let res = Self(Box::new(flags));
 		for t in types {
 			debug_assert!(res.contains_type(*t));
 		}
@@ -939,7 +940,7 @@ impl StaticRecord for NSec {
 	fn read_from_data(name: Name, mut data: &[u8], wire_packet: &[u8]) -> Result<Self, ()> {
 		let res = NSec {
 			name, next_name: read_wire_packet_name_bytes(&mut data, wire_packet)?,
-			types: NSecTypeMask(read_nsec_types_bitmap(&mut data)?),
+			types: NSecTypeMask(Box::new(read_nsec_types_bitmap(&mut data)?)),
 		};
 		debug_assert!(data.is_empty());
 		Ok(res)
@@ -998,7 +999,7 @@ impl StaticRecord for NSec3 {
 			name, hash_algo: read_u8(&mut data)?, flags: read_u8(&mut data)?,
 			hash_iterations: read_u16(&mut data)?, salt: read_u8_len_prefixed_bytes(&mut data)?,
 			next_name_hash: read_u8_len_prefixed_bytes(&mut data)?,
-			types: NSecTypeMask(read_nsec_types_bitmap(&mut data)?),
+			types: NSecTypeMask(Box::new(read_nsec_types_bitmap(&mut data)?)),
 		};
 		debug_assert!(data.is_empty());
 		Ok(res)
@@ -1143,5 +1144,12 @@ mod tests {
 				assert_eq!(a_ns.cmp(&b_ns), wire_ord);
 			}
 		}
+	}
+
+	#[test]
+	fn rr_is_not_bloated() {
+		// an earlier version of this library was inlining the NSecTypeMask into the RR, making each
+		// RR instance 8kB in size. This guards from regressions.
+		assert!(core::mem::size_of::<RR>() <= 256, "RR is {} bytes", core::mem::size_of::<RR>());
 	}
 }
