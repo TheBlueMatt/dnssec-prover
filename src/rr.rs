@@ -879,6 +879,24 @@ impl NSecTypeMaskBytes {
 			},
 		}
 	}
+	fn wire_blocks(&self) -> impl Iterator<Item = (u8, &[u8])> {
+		self.chunks(32).enumerate().filter_map(|(idx, flags)| {
+			let last_nonzero_idx = flags.iter().rposition(|flag| *flag != 0)?;
+			// Types are `u16`s, so there can be at most 8192 mask bytes, i.e. 256 blocks.
+			debug_assert!(idx <= u8::MAX as usize);
+			Some((idx as u8, &flags[..last_nonzero_idx + 1]))
+		})
+	}
+	fn wire_bytes(&self) -> impl Iterator<Item = u8> + '_ {
+		self.wire_blocks().flat_map(|(block, flags)| {
+			[block, flags.len() as u8].into_iter().chain(flags.iter().copied())
+		})
+	}
+	fn write<W: Writer>(&self, out: &mut W) {
+		for byte in self.wire_bytes() {
+			out.write(&byte.to_be_bytes());
+		}
+	}
 }
 impl core::ops::Deref for NSecTypeMaskBytes {
 	type Target = [u8];
@@ -898,17 +916,21 @@ impl core::ops::DerefMut for NSecTypeMaskBytes {
 	}
 }
 impl PartialEq for NSecTypeMaskBytes {
-	fn eq(&self, o: &Self) -> bool { self[..] == o[..] }
+	fn eq(&self, o: &Self) -> bool { self.wire_bytes().eq(o.wire_bytes()) }
 }
 impl Eq for NSecTypeMaskBytes {}
 impl Ord for NSecTypeMaskBytes {
-	fn cmp(&self, o: &Self) -> Ordering { self[..].cmp(&o[..]) }
+	fn cmp(&self, o: &Self) -> Ordering { self.wire_bytes().cmp(o.wire_bytes()) }
 }
 impl PartialOrd for NSecTypeMaskBytes {
 	fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) }
 }
 impl core::hash::Hash for NSecTypeMaskBytes {
-	fn hash<H: core::hash::Hasher>(&self, hasher: &mut H) { self[..].hash(hasher) }
+	fn hash<H: core::hash::Hasher>(&self, hasher: &mut H) {
+		for byte in self.wire_bytes() {
+			hasher.write_u8(byte);
+		}
+	}
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -1016,11 +1038,11 @@ impl StaticRecord for NSec {
 		Ok(res)
 	}
 	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
-		let len = name_bytes_len(&self.next_name) + nsec_types_bitmap_len(&self.types.0);
+		let len = name_bytes_len(&self.next_name) + self.types.0.wire_bytes().count() as u16;
 		out.write(&len.to_be_bytes());
 		// RFC 6840 §5.1 mandates this not be lowercased
 		write_name_without_case_modification(out, &self.next_name);
-		write_nsec_types_bitmap(out, &self.types.0);
+		self.types.0.write(out);
 	}
 }
 
@@ -1076,7 +1098,7 @@ impl StaticRecord for NSec3 {
 	}
 	fn write_u16_len_prefixed_data<W: Writer>(&self, out: &mut W) {
 		let len = 4 + 2 + self.salt.len() as u16 + self.next_name_hash.len() as u16 +
-			nsec_types_bitmap_len(&self.types.0);
+			self.types.0.wire_bytes().count() as u16;
 		out.write(&len.to_be_bytes());
 		out.write(&self.hash_algo.to_be_bytes());
 		out.write(&self.flags.to_be_bytes());
@@ -1085,7 +1107,7 @@ impl StaticRecord for NSec3 {
 		out.write(&self.salt);
 		out.write(&(self.next_name_hash.len() as u8).to_be_bytes());
 		out.write(&self.next_name_hash);
-		write_nsec_types_bitmap(out, &self.types.0);
+		self.types.0.write(out);
 	}
 }
 

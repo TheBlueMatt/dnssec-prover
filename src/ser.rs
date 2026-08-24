@@ -36,25 +36,6 @@ pub(crate) fn read_u8_len_prefixed_bytes(inp: &mut &[u8]) -> Result<Vec<u8>, ()>
 	Ok(res)
 }
 
-pub(crate) fn write_nsec_types_bitmap<W: Writer>(out: &mut W, types: &NSecTypeMaskBytes) {
-	for (idx, flags) in types.chunks(32).enumerate() {
-		if let Some(last_nonzero_idx) = flags.iter().rposition(|flag| *flag != 0) {
-			out.write(&(idx as u8).to_be_bytes());
-			out.write(&(last_nonzero_idx as u8 + 1).to_be_bytes());
-			out.write(&flags[..last_nonzero_idx + 1]);
-		}
-	}
-}
-pub(crate) fn nsec_types_bitmap_len(types: &NSecTypeMaskBytes) -> u16 {
-	let mut total_len = 0;
-	for flags in types.chunks(32) {
-		if let Some(last_nonzero_idx) = flags.iter().rposition(|flag| *flag != 0) {
-			total_len += 3 + last_nonzero_idx as u16;
-		}
-	}
-	total_len
-}
-
 pub(crate) fn read_nsec_types_bitmap(inp: &mut &[u8]) -> Result<NSecTypeMaskBytes, ()> {
 	let mut res = NSecTypeMaskBytes::new();
 	while !inp.is_empty() {
