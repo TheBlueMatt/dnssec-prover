@@ -845,16 +845,85 @@ impl StaticRecord for RRSig {
 	}
 }
 
+/// Note that anything less than 2*pointer_size - 1 will have no impact on NSecTypeMaskBytes size.
+const NSEC_MASK_INLINE_LEN: usize = 15;
+
+#[derive(Clone)]
+pub(super) enum NSecTypeMaskBytes {
+	Heap(Vec<u8>),
+	Inline {
+		bytes: [u8; NSEC_MASK_INLINE_LEN],
+		len: u8,
+	},
+}
+impl NSecTypeMaskBytes {
+	pub fn new() -> Self { Self::Inline { bytes: [0; NSEC_MASK_INLINE_LEN], len: 0 } }
+	pub fn len(&self) -> usize {
+		match self {
+			Self::Heap(bitmap) => bitmap.len(),
+			Self::Inline { len, .. } => *len as usize,
+		}
+	}
+	pub fn resize(&mut self, new_len: usize) {
+		match self {
+			Self::Heap(bitmap) => bitmap.resize(new_len, 0),
+			Self::Inline { bytes, len } if new_len <= NSEC_MASK_INLINE_LEN => {
+				bytes[core::cmp::min(*len as usize, new_len)..].fill(0);
+				*len = new_len as u8;
+			},
+			Self::Inline { bytes, len } => {
+				let mut bitmap = Vec::with_capacity(new_len);
+				bitmap.extend_from_slice(&bytes[..*len as usize]);
+				bitmap.resize(new_len, 0);
+				*self = Self::Heap(bitmap);
+			},
+		}
+	}
+}
+impl core::ops::Deref for NSecTypeMaskBytes {
+	type Target = [u8];
+	fn deref(&self) -> &[u8] {
+		match self {
+			Self::Heap(bitmap) => &bitmap[..],
+			Self::Inline { bytes, len } => &bytes[..*len as usize],
+		}
+	}
+}
+impl core::ops::DerefMut for NSecTypeMaskBytes {
+	fn deref_mut(&mut self) -> &mut [u8] {
+		match self {
+			Self::Heap(bitmap) => &mut bitmap[..],
+			Self::Inline { bytes, len } => &mut bytes[..*len as usize],
+		}
+	}
+}
+impl PartialEq for NSecTypeMaskBytes {
+	fn eq(&self, o: &Self) -> bool { self[..] == o[..] }
+}
+impl Eq for NSecTypeMaskBytes {}
+impl Ord for NSecTypeMaskBytes {
+	fn cmp(&self, o: &Self) -> Ordering { self[..].cmp(&o[..]) }
+}
+impl PartialOrd for NSecTypeMaskBytes {
+	fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) }
+}
+impl core::hash::Hash for NSecTypeMaskBytes {
+	fn hash<H: core::hash::Hasher>(&self, hasher: &mut H) { self[..].hash(hasher) }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 /// A mask used in [`NSec`] and [`NSec3`] records which indicates the resource record types which
 /// exist at the (hash of the) name described in [`Record::name`].
-pub struct NSecTypeMask([u8; 8192]);
+pub struct NSecTypeMask(NSecTypeMaskBytes);
 impl NSecTypeMask {
 	/// Constructs a new, empty, type mask.
-	pub fn new() -> Self { Self([0; 8192]) }
+	pub fn new() -> Self { Self(NSecTypeMaskBytes::new()) }
 	/// Builds a new type mask with the given types set
 	pub fn from_types(types: &[u16]) -> Self {
-		let mut flags = [0; 8192];
+		let mut flags = NSecTypeMaskBytes::new();
+		if let Some(max_type) = types.iter().max() {
+			flags.resize((*max_type as usize >> 3) + 1);
+		}
 		for t in types {
 			flags[*t as usize >> 3] |= 1 << (7 - (*t as usize % 8));
 		}
@@ -867,9 +936,11 @@ impl NSecTypeMask {
 	/// Checks if the given type (from [`Record::ty`]) is set, indicating a record of this type
 	/// exists.
 	pub fn contains_type(&self, ty: u16) -> bool {
-		let f = self.0[(ty >> 3) as usize];
-		// DNSSEC's bit fields are in wire order, so the high bit is type 0, etc.
-		f & (1 << (7 - (ty % 8))) != 0
+		match self.0.get((ty >> 3) as usize) {
+			// DNSSEC's bit fields are in wire order, so the high bit is type 0, etc.
+			Some(f) => f & (1 << (7 - (ty % 8))) != 0,
+			None => false,
+		}
 	}
 	fn write_json(&self, s: &mut String) {
 		*s += "[";
